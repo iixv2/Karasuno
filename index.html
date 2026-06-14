@@ -8,10 +8,11 @@
 <link rel="shortcut icon" href="/Public/shalosh.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/Public/karasuno.png">
 <script type="module">
-  import { initializeApp } from "https://cdn.skypack.dev/firebase@10.16.0";
-  import { getAnalytics } from "https://cdn.skypack.dev/firebase@10.16.0/analytics";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://cdn.skypack.dev/firebase@10.16.0/auth";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://cdn.skypack.dev/firebase@10.16.0/firestore";
+  // 1. تم تعديل الروابط هنا إلى خوادم جوجل الرسمية لحل مشكلة الـ CORS نهائياً
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-analytics.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -263,7 +264,7 @@
     }
   }
 
-  // Expose functions to global scope for onclick handlers
+  // ربط الدوال بالنطاق العالمي لكي تعمل أزرار الـ HTML القديمة فوراً دون تعديلها
   window.loginGoogle = loginGoogle;
   window.logoutGoogle = logoutGoogle;
   window.handleAuthAction = handleAuthAction;
