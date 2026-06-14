@@ -264,39 +264,47 @@
   }
 
   async function boot() {
-    // Handle return from Google redirect
-    try {
-      await getRedirectResult(auth);
-    } catch (err) {
-      console.error('Redirect result error', err);
-    }
-
-    // Listen for auth state — fetch username from Firestore before showing any screen
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const userSnap = await getDoc(doc(db, 'users', user.uid));
-          if (userSnap.exists() && userSnap.data().username) {
-            window.currentUsername = userSnap.data().username;
-          } else {
-            // Auto-assign Google display name so user goes straight to app
-            window.currentUsername = user.displayName || user.email.split('@')[0];
-            await setDoc(doc(db, 'users', user.uid), {
-              email: user.email,
-              username: window.currentUsername,
-              displayName: user.displayName || '',
-              photoURL: user.photoURL || '',
-              lastLogin: serverTimestamp()
-            }, { merge: true });
-          }
-        } catch (err) {
-          console.error('Failed to fetch username', err);
-          window.currentUsername = user.displayName || user.email.split('@')[0];
-        }
-      }
-      updateAuthUI(user);
-    });
+  try {
+    const redirectResult = await getRedirectResult(auth);
+    console.log('REDIRECT RESULT:', redirectResult);
+  } catch (err) {
+    console.error('Redirect result error:', err);
   }
+
+  onAuthStateChanged(auth, async (user) => {
+    console.log('AUTH STATE CHANGED - user:', user);
+    console.log('AUTH STATE CHANGED - currentUsername:', window.currentUsername);
+    
+    if (user) {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        console.log('FIRESTORE SNAP exists:', userSnap.exists());
+        console.log('FIRESTORE DATA:', userSnap.data());
+        
+        if (userSnap.exists() && userSnap.data().username) {
+          window.currentUsername = userSnap.data().username;
+          console.log('USERNAME SET FROM FIRESTORE:', window.currentUsername);
+        } else {
+          window.currentUsername = user.displayName || user.email.split('@')[0];
+          console.log('USERNAME SET FROM GOOGLE:', window.currentUsername);
+          await setDoc(doc(db, 'users', user.uid), {
+            email: user.email,
+            username: window.currentUsername,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            lastLogin: serverTimestamp()
+          }, { merge: true });
+        }
+      } catch (err) {
+        console.error('FIRESTORE ERROR:', err);
+        window.currentUsername = user.displayName || user.email.split('@')[0];
+      }
+    }
+    
+    console.log('CALLING updateAuthUI with user:', user?.email, 'username:', window.currentUsername);
+    updateAuthUI(user);
+  });
+}
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
