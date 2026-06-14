@@ -8,11 +8,11 @@
 <link rel="shortcut icon" href="/Public/shalosh.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/Public/karasuno.png">
 <script type="module">
-  // 1. تم تعديل الروابط هنا إلى خوادم جوجل الرسمية لحل مشكلة الـ CORS نهائياً
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-analytics.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-firestore.js";
+  // 1. تم تثبيت الإصدار المستقر 10.12.0 لتجنب خطأ 404 نهائياً
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -36,6 +36,7 @@
   window.historyCache = [];
   window.historyLoaded = false;
 
+  // الحفاظ على جميع دوالك الأصلية بالكامل دون تعديل منطقها
   async function syncUserProfile(user) {
     if(!user) return;
     try {
@@ -264,7 +265,7 @@
     }
   }
 
-  // ربط الدوال بالنطاق العالمي لكي تعمل أزرار الـ HTML القديمة فوراً دون تعديلها
+  // ربط الأزرار بالنطاق العالمي لتعمل مع الـ HTML الحالي فوراً
   window.loginGoogle = loginGoogle;
   window.logoutGoogle = logoutGoogle;
   window.handleAuthAction = handleAuthAction;
