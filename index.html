@@ -8,10 +8,10 @@
 <link rel="shortcut icon" href="/Public/shalosh.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/Public/karasuno.png">
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-analytics.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-firestore.js";
+  import { initializeApp } from "https://cdn.jsdelivr.net/npm/firebase@10.16.0/+esm";
+  import { getAnalytics } from "https://cdn.jsdelivr.net/npm/firebase@10.16.0/analytics/+esm";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://cdn.jsdelivr.net/npm/firebase@10.16.0/auth/+esm";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://cdn.jsdelivr.net/npm/firebase@10.16.0/firestore/+esm";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
