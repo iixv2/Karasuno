@@ -262,21 +262,35 @@ import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, o
   }
 
   onReady(async () => {
-    // Handle the return from Google's redirect sign-in
-    try {
-      const result = await getRedirectResult(auth);
-      if (result?.user) {
-        toast(`Signed in as ${result.user.displayName || result.user.email}`);
-      }
-    } catch (err) {
-      console.error('Redirect result error', err);
-      toast('Sign-in failed. Please try again.');
+  // First, check if we're returning from a Google redirect
+  let redirectHandled = false;
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      redirectHandled = true;
+      toast(`Signed in as ${result.user.displayName || result.user.email}`);
     }
+  } catch (err) {
+    console.error('Redirect result error', err);
+    toast('Sign-in failed. Please try again.');
+  }
 
-    onAuthStateChanged(auth, user => {
-      updateAuthUI(user);
-    });
+  // Now set up the auth state listener
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      // Check if this user already has a username in Firestore
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        if (userSnap.exists() && userSnap.data().username) {
+          window.currentUsername = userSnap.data().username;
+        }
+      } catch (err) {
+        console.error('Failed to fetch username', err);
+      }
+    }
+    updateAuthUI(user);
   });
+});
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
