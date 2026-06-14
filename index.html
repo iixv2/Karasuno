@@ -9,9 +9,9 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/Public/karasuno.png">
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
-import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -147,7 +147,7 @@ import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, o
       snapshot.docs.forEach(docSnap => {
         const match = docSnap.data();
         const statusColor = match.overall?.overallAtkEff >= 0.4 ? 'var(--green)' : match.overall?.overallAtkEff >= 0.3 ? 'var(--orange)' : 'var(--red)';
-        html += `<div class="diagnostic-row"><div style="flex:1"><strong>${match.config?.matchName || 'Match'}</strong><span>${match.config?.matchDate || ''}</span><span style="display:block;font-size:11px;color:var(--gray-dim);margin-top:4px;">@${match.config?.playerName || 'Player'}</span></div><div style="text-align:right"><span class="mono-data" style="color:${statusColor}; font-weight:800;">${match.overall?.overallAtkEff?.toFixed(1) || '—'}%</span><br><span style="font-size:11px;color:var(--gray-dim)">Attack Eff</span></div></div>`;
+        html += `<div class="diagnostic-row"><div style="flex:1"><strong>${match.config?.matchName || 'Match'}</strong><span>${match.config?.matchDate || ''}</span></div><div style="text-align:right"><span class="mono-data" style="color:${statusColor}; font-weight:800;">${match.overall?.overallAtkEff?.toFixed(1) || '—'}%</span></div></div>`;
       });
       html += '</div>';
       container.innerHTML = html;
@@ -157,12 +157,9 @@ import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, o
     }
   }
 
-  // ── KEY FIX: use redirect instead of popup ──────────────────────────
   async function loginGoogle() {
     try {
       await signInWithRedirect(auth, provider);
-      // Page will redirect to Google, then come back.
-      // getRedirectResult() below handles the return.
     } catch (err) {
       console.error('Sign-in redirect error', err);
       toast('Google sign in failed. Please try again.');
@@ -202,81 +199,99 @@ import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, o
     }
   }
 
-  // Replace updateAuthUI with this version
-function updateAuthUI(user) {
-  window.currentUser = user;
-  const loginScreen = document.getElementById('screen-login');
-  const usernameScreen = document.getElementById('screen-username');
-  const appEl = document.getElementById('app');
-  const topnav = document.getElementById('topnav');
+  function updateAuthUI(user) {
+    window.currentUser = user;
+    const loginScreen = document.getElementById('screen-login');
+    const usernameScreen = document.getElementById('screen-username');
+    const appEl = document.getElementById('app');
+    const topnav = document.getElementById('topnav');
 
-  if (!user) {
-    if (loginScreen) { loginScreen.style.display = 'flex'; loginScreen.classList.add('active'); }
-    if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
-    if (appEl) appEl.style.display = 'none';
-    if (topnav) topnav.style.display = 'none';
-    window.historyCache = [];
-    window.historyLoaded = false;
-    window.currentUsername = null;
-  } else if (!window.currentUsername) {
-    if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
-    if (usernameScreen) { usernameScreen.style.display = 'flex'; usernameScreen.classList.add('active'); }
-    if (appEl) appEl.style.display = 'none';
-    if (topnav) topnav.style.display = 'none';
+    if (!user) {
+      if (loginScreen) { loginScreen.style.display = 'flex'; loginScreen.classList.add('active'); }
+      if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+      if (appEl) appEl.style.display = 'none';
+      if (topnav) topnav.style.display = 'none';
+      window.historyCache = [];
+      window.historyLoaded = false;
+      window.currentUsername = null;
+    } else if (!window.currentUsername) {
+      if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+      if (usernameScreen) { usernameScreen.style.display = 'flex'; usernameScreen.classList.add('active'); }
+      if (appEl) appEl.style.display = 'none';
+      if (topnav) topnav.style.display = 'none';
+    } else {
+      if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+      if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+      if (appEl) appEl.style.display = 'block';
+      if (topnav) topnav.style.display = 'flex';
+      const authBtn = document.getElementById('authButton');
+      const userStatus = document.getElementById('userStatus');
+      if (authBtn) authBtn.textContent = 'Sign out';
+      if (userStatus) userStatus.textContent = `@${window.currentUsername || user.email.split('@')[0]}`;
+      syncUserProfile(user);
+      loadUserHistory();
+      loadFriendList();
+    }
+  }
+
+  function handleAuthAction() {
+    if (window.currentUser) {
+      logoutGoogle();
+    } else {
+      loginGoogle();
+    }
+  }
+
+  // Expose to global scope for HTML onclick attributes
+  window.loginGoogle = loginGoogle;
+  window.logoutGoogle = logoutGoogle;
+  window.handleAuthAction = handleAuthAction;
+  window.setUsernameAndContinue = setUsernameAndContinue;
+  window.updateAuthUI = updateAuthUI;
+  window.showFriendMatches = showFriendMatches;
+  window.addFriendByEmail = addFriendByEmail;
+
+  // Boot sequence
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
   } else {
-    if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
-    if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
-    if (appEl) appEl.style.display = 'block';
-    if (topnav) topnav.style.display = 'flex';
-    const authBtn = document.getElementById('authButton');
-    const userStatus = document.getElementById('userStatus');
-    if (authBtn) authBtn.textContent = 'Sign out';
-    if (userStatus) userStatus.textContent = `@${window.currentUsername || user.email.split('@')[0]}`;
-    syncUserProfile(user);
-    loadUserHistory();
-    loadFriendList();
-  }
-}
-
-// Replace onReady block with this
-onReady(async () => {
-  try {
-    await getRedirectResult(auth);
-  } catch (err) {
-    console.error('Redirect result error', err);
+    boot();
   }
 
-  onAuthStateChanged(auth, async (user) => {
-    if (user) {
-      // Always load username from Firestore before deciding which screen to show
-      try {
-        const userSnap = await getDoc(doc(db, 'users', user.uid));
-        if (userSnap.exists() && userSnap.data().username) {
-          window.currentUsername = userSnap.data().username;
-        } else {
-          // No username yet — use displayName as fallback so they go straight to app
-          // Remove this fallback if you want to force the username setup screen
+  async function boot() {
+    // Handle return from Google redirect
+    try {
+      await getRedirectResult(auth);
+    } catch (err) {
+      console.error('Redirect result error', err);
+    }
+
+    // Listen for auth state — fetch username from Firestore before showing any screen
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userSnap = await getDoc(doc(db, 'users', user.uid));
+          if (userSnap.exists() && userSnap.data().username) {
+            window.currentUsername = userSnap.data().username;
+          } else {
+            // Auto-assign Google display name so user goes straight to app
+            window.currentUsername = user.displayName || user.email.split('@')[0];
+            await setDoc(doc(db, 'users', user.uid), {
+              email: user.email,
+              username: window.currentUsername,
+              displayName: user.displayName || '',
+              photoURL: user.photoURL || '',
+              lastLogin: serverTimestamp()
+            }, { merge: true });
+          }
+        } catch (err) {
+          console.error('Failed to fetch username', err);
           window.currentUsername = user.displayName || user.email.split('@')[0];
-          // Save it so future loads find it
-          await setDoc(doc(db, 'users', user.uid), {
-            email: user.email,
-            username: window.currentUsername,
-            displayName: user.displayName || '',
-            photoURL: user.photoURL || '',
-            lastLogin: serverTimestamp()
-          }, { merge: true });
         }
-      } catch (err) {
-        console.error('Failed to fetch username from Firestore', err);
-        // Fallback so the user isn't stuck on login screen
-        window.currentUsername = user.displayName || user.email.split('@')[0];
       }
       updateAuthUI(user);
-    } else {
-      updateAuthUI(null);
-    }
-  });
-});
+    });
+  }
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
