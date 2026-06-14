@@ -29,7 +29,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider };
+  window.fb = { auth, db, provider, setDoc, doc };
   window.currentUser = null;
   window.currentUsername = null;
   window.historyCache = [];
@@ -265,30 +265,34 @@
   }
 
   async function boot() {
-    onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const userSnap = await getDoc(doc(db, 'users', user.uid));
-          if (userSnap.exists() && userSnap.data().username) {
-            window.currentUsername = userSnap.data().username;
-          } else {
-            window.currentUsername = user.displayName || user.email.split('@')[0];
-            await setDoc(doc(db, 'users', user.uid), {
-              email: user.email,
-              username: window.currentUsername,
-              displayName: user.displayName || '',
-              photoURL: user.photoURL || '',
-              lastLogin: serverTimestamp()
-            }, { merge: true });
-          }
-        } catch (err) {
-          console.error('Firestore error:', err);
+  // Hide everything while Firebase restores session
+  const loginScreen = document.getElementById('screen-login');
+  if (loginScreen) loginScreen.style.display = 'none';
+
+  onAuthStateChanged(auth, async (user) => {
+    if (user) {
+      try {
+        const userSnap = await getDoc(doc(db, 'users', user.uid));
+        if (userSnap.exists() && userSnap.data().username) {
+          window.currentUsername = userSnap.data().username;
+        } else {
           window.currentUsername = user.displayName || user.email.split('@')[0];
+          await setDoc(doc(db, 'users', user.uid), {
+            email: user.email,
+            username: window.currentUsername,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            lastLogin: serverTimestamp()
+          }, { merge: true });
         }
+      } catch (err) {
+        console.error('Firestore error:', err);
+        window.currentUsername = user.displayName || user.email.split('@')[0];
       }
-      updateAuthUI(user);
-    });
-  }
+    }
+    updateAuthUI(user);
+  });
+}
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
@@ -1496,9 +1500,12 @@ function saveMatch() {
   };
   history.unshift(record);
 
-  if(window.currentUser) {
+  if(window.currentUser && window.fb) {
+    const { setDoc, doc } = window.fb;
     setDoc(doc(window.fb.db, 'matches', id), record)
       .then(() => {
+        window.historyCache = [record, ...(window.historyCache || [])];
+        window.historyLoaded = true;
         toast(currentMatchShared ? 'Match shared with friends and synced!' : 'Match saved privately to Firebase!');
         currentMatchShared = false;
       })
@@ -1506,7 +1513,6 @@ function saveMatch() {
         console.error('Firebase save failed', err);
         toast('Saved locally, but Firebase sync failed.');
       });
-    window.historyCache = history;
   } else {
     localStorage.setItem('vb_history', JSON.stringify(history));
     toast('Match committed to local History Hub database!');
