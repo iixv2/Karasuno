@@ -167,17 +167,22 @@
   }
 
   async function logoutGoogle() {
-    try {
-      await signOut(auth);
-      window.currentUsername = null;
-      window.currentUser = null;
-      toast('Signed out successfully.');
-      updateAuthUI(null);
-    } catch (err) {
-      console.error('Sign out error', err);
-      toast('Unable to sign out.');
-    }
+  try {
+    await signOut(auth);
+    window.currentUsername = null;
+    window.currentUser = null;
+    window.historyCache = [];
+    window.historyLoaded = false;
+    toast('Signed out successfully.');
+    // Small delay so the toast shows, then reload the page cleanly
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
+  } catch (err) {
+    console.error('Sign out error', err);
+    toast('Unable to sign out.');
   }
+}
 
   async function setUsernameAndContinue() {
     const input = document.getElementById('usernameInput');
