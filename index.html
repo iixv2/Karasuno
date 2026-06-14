@@ -202,93 +202,79 @@ import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, o
     }
   }
 
-  function updateAuthUI(user) {
-    window.currentUser = user;
-    const loginScreen = document.getElementById('screen-login');
-    const usernameScreen = document.getElementById('screen-username');
-    const appEl = document.getElementById('app');
-    const topnav = document.getElementById('topnav');
+  // Replace updateAuthUI with this version
+function updateAuthUI(user) {
+  window.currentUser = user;
+  const loginScreen = document.getElementById('screen-login');
+  const usernameScreen = document.getElementById('screen-username');
+  const appEl = document.getElementById('app');
+  const topnav = document.getElementById('topnav');
 
-    if (!user) {
-      if (loginScreen) loginScreen.classList.add('active');
-      if (usernameScreen) usernameScreen.classList.remove('active');
-      if (appEl) appEl.style.display = 'none';
-      if (topnav) topnav.style.display = 'none';
-      window.historyCache = [];
-      window.historyLoaded = false;
-      window.currentUsername = null;
-    } else if (!window.currentUsername) {
-      if (loginScreen) loginScreen.classList.remove('active');
-      if (usernameScreen) usernameScreen.classList.add('active');
-      if (appEl) appEl.style.display = 'none';
-      if (topnav) topnav.style.display = 'none';
-    } else {
-      if (loginScreen) loginScreen.classList.remove('active');
-      if (usernameScreen) usernameScreen.classList.remove('active');
-      if (appEl) appEl.style.display = 'block';
-      if (topnav) topnav.style.display = 'flex';
-      document.getElementById('authButton').textContent = 'Sign out';
-      const displayName = window.currentUsername || user.email.split('@')[0];
-      document.getElementById('userStatus').textContent = `@${displayName}`;
-      syncUserProfile(user);
-      loadUserHistory();
-      loadFriendList();
-    }
+  if (!user) {
+    if (loginScreen) { loginScreen.style.display = 'flex'; loginScreen.classList.add('active'); }
+    if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+    if (appEl) appEl.style.display = 'none';
+    if (topnav) topnav.style.display = 'none';
+    window.historyCache = [];
+    window.historyLoaded = false;
+    window.currentUsername = null;
+  } else if (!window.currentUsername) {
+    if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+    if (usernameScreen) { usernameScreen.style.display = 'flex'; usernameScreen.classList.add('active'); }
+    if (appEl) appEl.style.display = 'none';
+    if (topnav) topnav.style.display = 'none';
+  } else {
+    if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+    if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+    if (appEl) appEl.style.display = 'block';
+    if (topnav) topnav.style.display = 'flex';
+    const authBtn = document.getElementById('authButton');
+    const userStatus = document.getElementById('userStatus');
+    if (authBtn) authBtn.textContent = 'Sign out';
+    if (userStatus) userStatus.textContent = `@${window.currentUsername || user.email.split('@')[0]}`;
+    syncUserProfile(user);
+    loadUserHistory();
+    loadFriendList();
   }
+}
 
-  function handleAuthAction() {
-    if (window.currentUser) {
-      logoutGoogle();
-    } else {
-      loginGoogle();
-    }
-  }
-
-  // Expose all functions to global scope for HTML onclick attributes
-  window.loginGoogle = loginGoogle;
-  window.logoutGoogle = logoutGoogle;
-  window.handleAuthAction = handleAuthAction;
-  window.setUsernameAndContinue = setUsernameAndContinue;
-  window.updateAuthUI = updateAuthUI;
-  window.showFriendMatches = showFriendMatches;
-  window.addFriendByEmail = addFriendByEmail;
-
-  function onReady(fn) {
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', fn);
-    } else {
-      fn();
-    }
-  }
-
-  onReady(async () => {
-  // First, check if we're returning from a Google redirect
-  let redirectHandled = false;
+// Replace onReady block with this
+onReady(async () => {
   try {
-    const result = await getRedirectResult(auth);
-    if (result?.user) {
-      redirectHandled = true;
-      toast(`Signed in as ${result.user.displayName || result.user.email}`);
-    }
+    await getRedirectResult(auth);
   } catch (err) {
     console.error('Redirect result error', err);
-    toast('Sign-in failed. Please try again.');
   }
 
-  // Now set up the auth state listener
   onAuthStateChanged(auth, async (user) => {
     if (user) {
-      // Check if this user already has a username in Firestore
+      // Always load username from Firestore before deciding which screen to show
       try {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
         if (userSnap.exists() && userSnap.data().username) {
           window.currentUsername = userSnap.data().username;
+        } else {
+          // No username yet — use displayName as fallback so they go straight to app
+          // Remove this fallback if you want to force the username setup screen
+          window.currentUsername = user.displayName || user.email.split('@')[0];
+          // Save it so future loads find it
+          await setDoc(doc(db, 'users', user.uid), {
+            email: user.email,
+            username: window.currentUsername,
+            displayName: user.displayName || '',
+            photoURL: user.photoURL || '',
+            lastLogin: serverTimestamp()
+          }, { merge: true });
         }
       } catch (err) {
-        console.error('Failed to fetch username', err);
+        console.error('Failed to fetch username from Firestore', err);
+        // Fallback so the user isn't stuck on login screen
+        window.currentUsername = user.displayName || user.email.split('@')[0];
       }
+      updateAuthUI(user);
+    } else {
+      updateAuthUI(null);
     }
-    updateAuthUI(user);
   });
 });
 </script>
