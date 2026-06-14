@@ -67,34 +67,43 @@
   }
 
   async function loadFriendList() {
-    const container = document.getElementById('friendsList');
-    if (!container) return;
-    if (!window.currentUser) {
-      container.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>SIGN IN TO FIND FRIENDS</h3><p>Google login is required to add friends and view shared matches.</p></div>`;
+  const container = document.getElementById('friendsList');
+  if(!container) return;
+  if(!window.currentUser) {
+    container.innerHTML = `<div class="empty-state" style="padding:30px 0;"><div class="empty-icon" style="font-size:36px;">👥</div><h3 style="font-size:18px;">No Friends Yet</h3><p>Add friends by email or username.</p></div>`;
+    return;
+  }
+  container.innerHTML = `<div style="color:var(--gray-dim); font-size:13px;">Loading...</div>`;
+  try {
+    const docSnap = await getDoc(doc(db, 'friends', window.currentUser.uid));
+    const connections = docSnap.exists() ? docSnap.data().connections || {} : {};
+    if(Object.keys(connections).length === 0) {
+      container.innerHTML = `<div class="empty-state" style="padding:30px 0;"><div class="empty-icon" style="font-size:36px; margin-bottom:10px;">👥</div><h3 style="font-size:18px;">No Friends Yet</h3><p>Add a friend using their email or username.</p></div>`;
       return;
     }
-    try {
-      const docSnap = await getDoc(doc(db, 'friends', window.currentUser.uid));
-      const connections = docSnap.exists() ? docSnap.data().connections || {} : {};
-      if (Object.keys(connections).length === 0) {
-        container.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No friends yet</h3><p>Add friends by email to view their shared matches.</p></div>`;
-        return;
-      }
-      let html = '<div class="history-grid" style="margin-bottom:0;">';
-      Object.entries(connections).forEach(([friendUid, data]) => {
-        html += `<div class="history-card" onclick="showFriendMatches('${friendUid}')">
-          <div class="history-card-name">${data.name || data.email}</div>
-          <div class="history-card-meta">${data.email}</div>
-          <div class="history-card-stats"><div class="hcs"><div class="hcs-val">VIEW</div><div class="hcs-label">Shared Matches</div></div></div>
+    let html = '';
+    Object.entries(connections).forEach(([friendUid, data]) => {
+      html += `
+        <div onclick="showFriendMatches('${friendUid}')" style="
+          display:flex; align-items:center; gap:12px;
+          padding:12px; border-radius:8px; cursor:pointer;
+          border:1px solid var(--border-dim); background:var(--bg-mid);
+          margin-bottom:10px; transition:all 0.2s;
+        " onmouseover="this.style.borderColor='var(--orange)'" onmouseout="this.style.borderColor='var(--border-dim)'">
+          <div style="width:40px; height:40px; border-radius:50%; background:var(--orange-glow); border:1px solid var(--orange); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🏐</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-weight:700; color:var(--white); font-size:14px;">@${data.username || data.name || data.email}</div>
+            <div style="font-size:12px; color:var(--gray-dim); margin-top:2px;">${data.email}</div>
+          </div>
+          <div style="font-size:11px; color:var(--orange); font-weight:700; letter-spacing:1px;">VIEW →</div>
         </div>`;
-      });
-      html += '</div>';
-      container.innerHTML = html;
-    } catch (err) {
-      console.error('Friend list load failed', err);
-      container.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><h3>Unable to load friends</h3><p>Check your network or Firebase configuration.</p></div>`;
-    }
+    });
+    container.innerHTML = html;
+  } catch (err) {
+    console.error('Friend list load failed', err);
+    container.innerHTML = `<div style="color:var(--red); font-size:13px;">Unable to load friends.</div>`;
   }
+}
 
   async function addFriendByEmail() {
     const input = document.getElementById('friendEmailInput');
@@ -132,31 +141,62 @@
   }
 
   async function showFriendMatches(friendUid) {
-    const container = document.getElementById('friendMatches');
-    if (!window.currentUser) { toast('Sign in to view friend matches.'); return; }
-    try {
-      const userSnap = await getDoc(doc(db, 'users', friendUid));
-      const friendName = userSnap.exists() ? (userSnap.data().username || userSnap.data().displayName || userSnap.data().email) : 'Friend';
-      const q = query(collection(db, 'matches'), where('uid', '==', friendUid), where('shared', '==', true), orderBy('timestamp', 'desc'));
-      const snapshot = await getDocs(q);
-      if (snapshot.empty) {
-        container.innerHTML = `<div class="analytics-card"><div style="font-weight:700;color:var(--white);">@${friendName} hasn't shared any match records yet.</div></div>`;
-        return;
-      }
-      let html = `<div class="analytics-card"><div style="font-weight:700;color:var(--white);margin-bottom:14px;">@${friendName}'s Shared Matches</div>`;
+  const container = document.getElementById('friendMatches');
+  if(!container) return;
+  if(!window.currentUser) { toast('Sign in to view friend matches.'); return; }
+  container.innerHTML = `<div class="analytics-card"><div style="color:var(--gray-dim); font-size:13px;">Loading matches...</div></div>`;
+  try {
+    const userSnap = await getDoc(doc(db, 'users', friendUid));
+    const friendData = userSnap.exists() ? userSnap.data() : {};
+    const friendName = friendData.username || friendData.displayName || friendData.email || 'Friend';
+    const q = query(collection(db, 'matches'), where('uid', '==', friendUid), where('shared', '==', true), orderBy('timestamp', 'desc'));
+    const snapshot = await getDocs(q);
+    let html = `
+      <div class="analytics-card">
+        <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid var(--border-dim);">
+          <div style="width:44px; height:44px; border-radius:50%; background:var(--orange-glow); border:1px solid var(--orange); display:flex; align-items:center; justify-content:center; font-size:20px;">🏐</div>
+          <div>
+            <div style="font-family:'Bebas Neue',sans-serif; font-size:24px; color:var(--white); letter-spacing:2px;">@${friendName}</div>
+            <div style="font-size:12px; color:var(--gray-dim);">Shared Match History</div>
+          </div>
+        </div>`;
+    if(snapshot.empty) {
+      html += `<div class="empty-state" style="padding:30px 0;"><div class="empty-icon" style="font-size:36px; margin-bottom:10px;">🏐</div><h3 style="font-size:18px;">No Shared Matches</h3><p>@${friendName} hasn't shared any matches yet.</p></div>`;
+    } else {
       snapshot.docs.forEach(docSnap => {
         const match = docSnap.data();
-        const statusColor = match.overall?.overallAtkEff >= 0.4 ? 'var(--green)' : match.overall?.overallAtkEff >= 0.3 ? 'var(--orange)' : 'var(--red)';
-        html += `<div class="diagnostic-row"><div style="flex:1"><strong>${match.config?.matchName || 'Match'}</strong><span>${match.config?.matchDate || ''}</span></div><div style="text-align:right"><span class="mono-data" style="color:${statusColor}; font-weight:800;">${match.overall?.overallAtkEff?.toFixed(1) || '—'}%</span></div></div>`;
+        const o = match.overall || {};
+        const eff = o.overallAtkEff;
+        const effColor = eff >= 50 ? 'var(--green)' : eff >= 35 ? 'var(--orange)' : 'var(--red)';
+        html += `
+          <div style="background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:16px; margin-bottom:12px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+              <div>
+                <div style="font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--white); letter-spacing:1px;">${match.config?.matchName || 'Match'}</div>
+                <div style="font-size:12px; color:var(--gray-dim); margin-top:2px;">${match.config?.playerName || ''} • ${match.config?.matchDate || ''} • ${match.config?.setCount || '?'} Sets</div>
+              </div>
+              <div style="text-align:right;">
+                <div style="font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:800; color:${effColor};">${eff ? eff.toFixed(1)+'%' : '—'}</div>
+                <div style="font-size:10px; color:var(--gray-dim); text-transform:uppercase; letter-spacing:0.5px;">Atk Eff</div>
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px;">
+              ${o.totalServes > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallServeAcc?.toFixed(1)}%</div><div class="hcs-label">Serve%</div></div>` : ''}
+              ${o.totalAttempts > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallAtkEff?.toFixed(1)}%</div><div class="hcs-label">Atk Eff</div></div>` : ''}
+              ${o.totalPasses > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallPasser?.toFixed(2)}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
+              ${o.totalBlockAtt > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallBlockRate?.toFixed(1)}%</div><div class="hcs-label">Block%</div></div>` : ''}
+            </div>
+          </div>`;
       });
-      html += '</div>';
-      container.innerHTML = html;
-    } catch (err) {
-      console.error('Failed to load friend matches', err);
-      container.innerHTML = `<div class="analytics-card"><div style="font-weight:700;color:var(--white);">Unable to load friend matches.</div></div>`;
     }
+    html += '</div>';
+    container.innerHTML = html;
+    container.scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    console.error('Failed to load friend matches', err);
+    container.innerHTML = `<div class="analytics-card"><div style="color:var(--red); font-size:13px;">Unable to load matches. Check console for index errors.</div></div>`;
   }
-
+}
   async function loginGoogle() {
   try {
     const result = await signInWithPopup(auth, provider);
@@ -1541,17 +1581,30 @@ function renderFriends() {
   if(!container) return;
   const signedIn = !!window.currentUser;
   const displayName = signedIn ? (window.currentUsername || window.currentUser.email.split('@')[0]) : 'Guest';
-  let html = `<div class="analytics-card"><div style="margin-bottom:20px;">
-      <div style="font-size:14px; font-weight:700; color:var(--white); margin-bottom:8px;">${signedIn ? `Your Profile: @${displayName}` : 'Sign in with Google to access Friends'}</div>
-      <div style="font-size:12px; color:var(--gray-dim); margin-bottom:12px;">Add friends by username or email to see their shared match analytics.</div>
-      <div style="display:grid; gap:12px;">
-        <input id="friendEmailInput" class="field-input" type="text" placeholder="username or email@example.com" ${signedIn ? '' : 'disabled'} />
-        <button class="btn btn-primary" onclick="addFriendByEmail()" ${signedIn ? '' : 'disabled'}>+ Add Friend</button>
+
+  let html = `
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; align-items:start;">
+      <div class="analytics-card">
+        <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:12px;">Add Friend</div>
+        ${signedIn ? `
+          <div style="font-size:14px; font-weight:700; color:var(--white); margin-bottom:4px;">Your Profile</div>
+          <div style="font-size:13px; color:var(--orange); margin-bottom:16px; font-weight:600;">@${displayName}</div>
+        ` : `
+          <div style="font-size:13px; color:var(--gray-dim); margin-bottom:16px;">Sign in with Google to access Friends.</div>
+        `}
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <input id="friendEmailInput" class="field-input" type="text" placeholder="username or email@example.com" ${signedIn ? '' : 'disabled'} />
+          <button class="btn btn-primary" onclick="addFriendByEmail()" ${signedIn ? '' : 'disabled'}>+ Add Friend</button>
+        </div>
+      </div>
+      <div class="analytics-card">
+        <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Your Friends</div>
+        <div id="friendsList"></div>
       </div>
     </div>
-    <div id="friendsList"></div>
     <div id="friendMatches" style="margin-top:24px;"></div>
-  </div>`;
+  `;
+
   container.innerHTML = html;
   if(signedIn) loadFriendList();
 }
