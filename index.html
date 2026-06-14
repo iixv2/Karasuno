@@ -8,11 +8,10 @@
 <link rel="shortcut icon" href="/Public/shalosh.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/Public/karasuno.png">
 <script type="module">
-  // 1. تم تثبيت الإصدار المستقر 10.12.0 لتجنب خطأ 404 نهائياً
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-analytics.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, sendSignInLinkToEmail, isSignInWithEmailLink, signInWithEmailLink } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-app.js";
+  import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-analytics.js";
+  import { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.16.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -36,9 +35,8 @@
   window.historyCache = [];
   window.historyLoaded = false;
 
-  // الحفاظ على جميع دوالك الأصلية بالكامل دون تعديل منطقها
   async function syncUserProfile(user) {
-    if(!user) return;
+    if (!user) return;
     try {
       const username = window.currentUsername || user.displayName || user.email.split('@')[0];
       await setDoc(doc(db, 'users', user.uid), {
@@ -55,13 +53,13 @@
   }
 
   async function loadUserHistory() {
-    if(!window.currentUser) return;
+    if (!window.currentUser) return;
     try {
       const q = query(collection(db, 'matches'), where('uid', '==', window.currentUser.uid), orderBy('timestamp', 'desc'));
       const snapshot = await getDocs(q);
       window.historyCache = snapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data() }));
       window.historyLoaded = true;
-      if(document.getElementById('historyContent')) renderHistory();
+      if (document.getElementById('historyContent')) renderHistory();
     } catch (err) {
       console.error('Failed to load user history', err);
       toast('Unable to load synced history from Firebase.');
@@ -70,27 +68,25 @@
 
   async function loadFriendList() {
     const container = document.getElementById('friendsList');
-    if(!container) return;
-    if(!window.currentUser) {
+    if (!container) return;
+    if (!window.currentUser) {
       container.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>SIGN IN TO FIND FRIENDS</h3><p>Google login is required to add friends and view shared matches.</p></div>`;
       return;
     }
-
     try {
       const docSnap = await getDoc(doc(db, 'friends', window.currentUser.uid));
       const connections = docSnap.exists() ? docSnap.data().connections || {} : {};
-      if(Object.keys(connections).length === 0) {
+      if (Object.keys(connections).length === 0) {
         container.innerHTML = `<div class="empty-state"><div class="empty-icon">👥</div><h3>No friends yet</h3><p>Add friends by email to view their shared matches.</p></div>`;
         return;
       }
-
       let html = '<div class="history-grid" style="margin-bottom:0;">';
       Object.entries(connections).forEach(([friendUid, data]) => {
         html += `<div class="history-card" onclick="showFriendMatches('${friendUid}')">
-            <div class="history-card-name">${data.name || data.email}</div>
-            <div class="history-card-meta">${data.email}</div>
-            <div class="history-card-stats"><div class="hcs"><div class="hcs-val">VIEW</div><div class="hcs-label">Shared Matches</div></div></div>
-          </div>`;
+          <div class="history-card-name">${data.name || data.email}</div>
+          <div class="history-card-meta">${data.email}</div>
+          <div class="history-card-stats"><div class="hcs"><div class="hcs-val">VIEW</div><div class="hcs-label">Shared Matches</div></div></div>
+        </div>`;
       });
       html += '</div>';
       container.innerHTML = html;
@@ -103,28 +99,22 @@
   async function addFriendByEmail() {
     const input = document.getElementById('friendEmailInput');
     const query_term = input?.value.trim();
-    if(!window.currentUser) { toast('Sign in first to add friends.'); return; }
-    if(!query_term) { toast('Enter a friend email or username.'); return; }
-    if(query_term === window.currentUser.email || query_term === window.currentUsername) { toast('You cannot add yourself.'); return; }
-
+    if (!window.currentUser) { toast('Sign in first to add friends.'); return; }
+    if (!query_term) { toast('Enter a friend email or username.'); return; }
+    if (query_term === window.currentUser.email || query_term === window.currentUsername) { toast('You cannot add yourself.'); return; }
     try {
-      let q = null;
-      if(query_term.includes('@')) {
-        q = query(collection(db, 'users'), where('email', '==', query_term), limit(1));
-      } else {
-        q = query(collection(db, 'users'), where('username', '==', query_term), limit(1));
-      }
+      let q = query_term.includes('@')
+        ? query(collection(db, 'users'), where('email', '==', query_term), limit(1))
+        : query(collection(db, 'users'), where('username', '==', query_term), limit(1));
       const snapshot = await getDocs(q);
-      if(snapshot.empty) { toast('No user found with that email or username.'); return; }
+      if (snapshot.empty) { toast('No user found with that email or username.'); return; }
       const friendDoc = snapshot.docs[0];
       const friendUid = friendDoc.id;
       const friendData = friendDoc.data();
-
       const friendRef = doc(db, 'friends', window.currentUser.uid);
       const currentFriendsSnap = await getDoc(friendRef);
       const currentConnections = currentFriendsSnap.exists() ? currentFriendsSnap.data().connections || {} : {};
-      if(currentConnections[friendUid]) { toast('This friend is already added.'); return; }
-
+      if (currentConnections[friendUid]) { toast('This friend is already added.'); return; }
       currentConnections[friendUid] = {
         email: friendData.email,
         username: friendData.username || friendData.email.split('@')[0],
@@ -143,18 +133,16 @@
 
   async function showFriendMatches(friendUid) {
     const container = document.getElementById('friendMatches');
-    if(!window.currentUser) { toast('Sign in to view friend matches.'); return; }
-
+    if (!window.currentUser) { toast('Sign in to view friend matches.'); return; }
     try {
       const userSnap = await getDoc(doc(db, 'users', friendUid));
       const friendName = userSnap.exists() ? (userSnap.data().username || userSnap.data().displayName || userSnap.data().email) : 'Friend';
       const q = query(collection(db, 'matches'), where('uid', '==', friendUid), where('shared', '==', true), orderBy('timestamp', 'desc'));
       const snapshot = await getDocs(q);
-      if(snapshot.empty) {
+      if (snapshot.empty) {
         container.innerHTML = `<div class="analytics-card"><div style="font-weight:700;color:var(--white);">@${friendName} hasn't shared any match records yet.</div></div>`;
         return;
       }
-
       let html = `<div class="analytics-card"><div style="font-weight:700;color:var(--white);margin-bottom:14px;">@${friendName}'s Shared Matches</div>`;
       snapshot.docs.forEach(docSnap => {
         const match = docSnap.data();
@@ -169,14 +157,15 @@
     }
   }
 
+  // ── KEY FIX: use redirect instead of popup ──────────────────────────
   async function loginGoogle() {
     try {
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-      toast(`Signed in as ${user.displayName || user.email}`);
+      await signInWithRedirect(auth, provider);
+      // Page will redirect to Google, then come back.
+      // getRedirectResult() below handles the return.
     } catch (err) {
-      console.error('Sign-in error', err);
-      toast('Google sign in canceled or failed.');
+      console.error('Sign-in redirect error', err);
+      toast('Google sign in failed. Please try again.');
     }
   }
 
@@ -196,15 +185,13 @@
   async function setUsernameAndContinue() {
     const input = document.getElementById('usernameInput');
     const username = input?.value.trim();
-    if(!username) { toast('Enter a username'); return; }
-    if(username.length < 3) { toast('Username must be at least 3 characters'); return; }
-    if(!/^[a-zA-Z0-9_]+$/.test(username)) { toast('Username can only have letters, numbers, and underscores'); return; }
-
+    if (!username) { toast('Enter a username'); return; }
+    if (username.length < 3) { toast('Username must be at least 3 characters'); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) { toast('Username can only have letters, numbers, and underscores'); return; }
     try {
       const q = query(collection(db, 'users'), where('username', '==', username), limit(1));
       const snapshot = await getDocs(q);
-      if(snapshot.size > 0) { toast('Username already taken'); return; }
-
+      if (snapshot.size > 0) { toast('Username already taken'); return; }
       window.currentUsername = username;
       await syncUserProfile(window.currentUser);
       toast('Profile set up successfully!');
@@ -219,27 +206,27 @@
     window.currentUser = user;
     const loginScreen = document.getElementById('screen-login');
     const usernameScreen = document.getElementById('screen-username');
-    const app = document.getElementById('app');
+    const appEl = document.getElementById('app');
     const topnav = document.getElementById('topnav');
 
-    if(!user) {
-      if(loginScreen) loginScreen.classList.add('active');
-      if(usernameScreen) usernameScreen.classList.remove('active');
-      if(app) app.style.display = 'none';
-      if(topnav) topnav.style.display = 'none';
+    if (!user) {
+      if (loginScreen) loginScreen.classList.add('active');
+      if (usernameScreen) usernameScreen.classList.remove('active');
+      if (appEl) appEl.style.display = 'none';
+      if (topnav) topnav.style.display = 'none';
       window.historyCache = [];
       window.historyLoaded = false;
       window.currentUsername = null;
-    } else if(!window.currentUsername) {
-      if(loginScreen) loginScreen.classList.remove('active');
-      if(usernameScreen) usernameScreen.classList.add('active');
-      if(app) app.style.display = 'none';
-      if(topnav) topnav.style.display = 'none';
+    } else if (!window.currentUsername) {
+      if (loginScreen) loginScreen.classList.remove('active');
+      if (usernameScreen) usernameScreen.classList.add('active');
+      if (appEl) appEl.style.display = 'none';
+      if (topnav) topnav.style.display = 'none';
     } else {
-      if(loginScreen) loginScreen.classList.remove('active');
-      if(usernameScreen) usernameScreen.classList.remove('active');
-      if(app) app.style.display = 'block';
-      if(topnav) topnav.style.display = 'flex';
+      if (loginScreen) loginScreen.classList.remove('active');
+      if (usernameScreen) usernameScreen.classList.remove('active');
+      if (appEl) appEl.style.display = 'block';
+      if (topnav) topnav.style.display = 'flex';
       document.getElementById('authButton').textContent = 'Sign out';
       const displayName = window.currentUsername || user.email.split('@')[0];
       document.getElementById('userStatus').textContent = `@${displayName}`;
@@ -250,12 +237,21 @@
   }
 
   function handleAuthAction() {
-    if(window.currentUser) {
+    if (window.currentUser) {
       logoutGoogle();
     } else {
       loginGoogle();
     }
   }
+
+  // Expose all functions to global scope for HTML onclick attributes
+  window.loginGoogle = loginGoogle;
+  window.logoutGoogle = logoutGoogle;
+  window.handleAuthAction = handleAuthAction;
+  window.setUsernameAndContinue = setUsernameAndContinue;
+  window.updateAuthUI = updateAuthUI;
+  window.showFriendMatches = showFriendMatches;
+  window.addFriendByEmail = addFriendByEmail;
 
   function onReady(fn) {
     if (document.readyState === 'loading') {
@@ -265,27 +261,22 @@
     }
   }
 
-  // ربط الأزرار بالنطاق العالمي لتعمل مع الـ HTML الحالي فوراً
-  window.loginGoogle = loginGoogle;
-  window.logoutGoogle = logoutGoogle;
-  window.handleAuthAction = handleAuthAction;
-  window.setUsernameAndContinue = setUsernameAndContinue;
-  window.updateAuthUI = updateAuthUI;
-  window.showScreen = showScreen;
-  window.startMatch = startMatch;
-  window.saveMatch = saveMatch;
-  window.toggleMatchShare = toggleMatchShare;
-  window.compileAnalytics = compileAnalytics;
-  window.addFriendByEmail = addFriendByEmail;
-  window.clearHistory = clearHistory;
+  onReady(async () => {
+    // Handle the return from Google's redirect sign-in
+    try {
+      const result = await getRedirectResult(auth);
+      if (result?.user) {
+        toast(`Signed in as ${result.user.displayName || result.user.email}`);
+      }
+    } catch (err) {
+      console.error('Redirect result error', err);
+      toast('Sign-in failed. Please try again.');
+    }
 
-  onReady(() => {
     onAuthStateChanged(auth, user => {
       updateAuthUI(user);
     });
   });
-
-  window.initFirebase = () => updateAuthUI(null);
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
@@ -1659,7 +1650,6 @@ function toast(msg) {
 }
 
 document.getElementById('matchDate').valueAsDate = new Date();
-window.loginGoogle = loginGoogle;
 </script>
 </body>
 </html>
