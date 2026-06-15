@@ -13,7 +13,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -31,7 +31,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, doc };
+  window.fb = { auth, db, provider, setDoc, doc, deleteDoc, getDocs, collection, query, where };
   window.currentUser = null;
   window.currentUsername = null;
   window.historyCache = [];
@@ -1572,10 +1572,50 @@ function getHistory() {
 }
 
 function clearHistory() {
-  if(confirm('Wipe persistent match history ledger? This operation is completely irreversible.')) {
+  if(!confirm('Wipe persistent match history ledger? This operation is completely irreversible.')) return;
+
+  if(window.currentUser && window.fb) {
+    const { getDocs, collection, query, where, deleteDoc, doc } = window.fb;
+    const q = query(collection(window.fb.db, 'matches'), where('uid', '==', window.currentUser.uid));
+    getDocs(q).then(snapshot => {
+      const deletes = snapshot.docs.map(d => deleteDoc(doc(window.fb.db, 'matches', d.id)));
+      Promise.all(deletes).then(() => {
+        window.historyCache = [];
+        window.historyLoaded = true;
+        renderHistory();
+        toast('All matches deleted.');
+      });
+    }).catch(err => {
+      console.error('Clear history failed', err);
+      toast('Unable to wipe history.');
+    });
+  } else {
     localStorage.removeItem('vb_history');
     renderHistory();
     toast('Database wiped.');
+  }
+}
+
+function deleteMatch(id) {
+  if(!confirm('Delete this match permanently?')) return;
+
+  if(window.currentUser && window.fb) {
+    const { deleteDoc, doc } = window.fb;
+    deleteDoc(doc(window.fb.db, 'matches', id))
+      .then(() => {
+        window.historyCache = window.historyCache.filter(m => m.id !== id);
+        renderHistory();
+        toast('Match deleted.');
+      })
+      .catch(err => {
+        console.error('Delete failed', err);
+        toast('Unable to delete match.');
+      });
+  } else {
+    const history = getHistory().filter(m => m.id !== id);
+    localStorage.setItem('vb_history', JSON.stringify(history));
+    renderHistory();
+    toast('Match deleted.');
   }
 }
 
@@ -1627,12 +1667,23 @@ function renderHistory() {
   }
 
   let html = '<div class="history-grid" style="margin-bottom:32px;">';
-  history.forEach((m,idx) => {
+  history.forEach((m) => {
     const o = m.overall || {};
-    html += `<div class="history-card" onclick="showHistoryDetail('${m.id}')">
-      <div class="history-card-name">${m.config?.matchName || 'Match'}</div>
-      <div class="history-card-meta">${m.config?.playerName || ''} • ${m.config?.matchDate || ''} • ${m.config?.setCount || '?'} Sets Tracked</div>
-      <div class="history-card-stats">
+    html += `<div class="history-card">
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:8px;">
+        <div class="history-card-name" style="margin-bottom:0;">${m.config?.matchName || 'Match'}</div>
+        <button onclick="deleteMatch('${m.id}')" style="
+          background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3);
+          color:var(--red); border-radius:6px; padding:4px 10px;
+          font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px;
+          flex-shrink:0; margin-left:8px; transition:all 0.2s;
+        " onmouseover="this.style.background='var(--red)';this.style.color='#fff'"
+           onmouseout="this.style.background='rgba(239,68,68,0.15)';this.style.color='var(--red)'">
+          🗑 DELETE
+        </button>
+      </div>
+      <div class="history-card-meta" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">${m.config?.playerName || ''} • ${m.config?.matchDate || ''} • ${m.config?.setCount || '?'} Sets Tracked</div>
+      <div class="history-card-stats" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">
         ${o.totalServes > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallServeAcc?.toFixed(1)}%</div><div class="hcs-label">Serve%</div></div>` : ''}
         ${o.totalAttempts > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallAtkEff?.toFixed(1)}%</div><div class="hcs-label">Atk Eff%</div></div>` : ''}
         ${o.totalPasses > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallPasser?.toFixed(2)}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
@@ -1645,7 +1696,7 @@ function renderHistory() {
   if(history.length >= 2) {
     html += `<div class="analytics-card">
       <div style="font-family:'Bebas Neue',sans-serif; font-size:24px; color:var(--white); letter-spacing:2px; margin-bottom:4px;">Trend Comparison Matrix Grid</div>
-      <div style="font-size:12px; color:var(--gray-dim); margin-bottom:20px; font-weight: 500;">Δ = Performance differential vs previous historical session tracking chronology</div>
+      <div style="font-size:12px; color:var(--gray-dim); margin-bottom:20px; font-weight:500;">Δ = Performance differential vs previous historical session tracking chronology</div>
       <div style="overflow-x:auto;"><table class="comp-table">
         <thead><tr><th>#</th><th>Match Profile</th><th>Date</th><th>Serve%</th><th>Δ</th><th>Atk Eff%</th><th>Δ</th><th>Pass Rtg</th><th>Δ</th></tr></thead>
         <tbody>`;
