@@ -36,6 +36,7 @@
   window.currentUsername = null;
   window.historyCache = [];
   window.historyLoaded = false;
+  window.deleteFriend = deleteFriend;
 
   async function syncUserProfile(user) {
     if (!user) return;
@@ -86,24 +87,64 @@
     let html = '';
     Object.entries(connections).forEach(([friendUid, data]) => {
       html += `
-        <div onclick="showFriendMatches('${friendUid}')" style="
+        <div style="
           display:flex; align-items:center; gap:12px;
-          padding:12px; border-radius:8px; cursor:pointer;
+          padding:12px; border-radius:8px;
           border:1px solid var(--border-dim); background:var(--bg-mid);
-          margin-bottom:10px; transition:all 0.2s;
-        " onmouseover="this.style.borderColor='var(--orange)'" onmouseout="this.style.borderColor='var(--border-dim)'">
-          <div style="width:40px; height:40px; border-radius:50%; background:var(--orange-glow); border:1px solid var(--orange); display:flex; align-items:center; justify-content:center; font-size:18px; flex-shrink:0;">🏐</div>
-          <div style="flex:1; min-width:0;">
+          margin-bottom:10px;
+        ">
+          <div onclick="showFriendMatches('${friendUid}')" style="
+            width:40px; height:40px; border-radius:50%;
+            background:var(--orange-glow); border:1px solid var(--orange);
+            display:flex; align-items:center; justify-content:center;
+            font-size:18px; flex-shrink:0; cursor:pointer;
+          ">🏐</div>
+          <div onclick="showFriendMatches('${friendUid}')" style="flex:1; min-width:0; cursor:pointer;">
             <div style="font-weight:700; color:var(--white); font-size:14px;">@${data.username || data.name || data.email}</div>
             <div style="font-size:12px; color:var(--gray-dim); margin-top:2px;">${data.email}</div>
           </div>
-          <div style="font-size:11px; color:var(--orange); font-weight:700; letter-spacing:1px;">VIEW →</div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button onclick="showFriendMatches('${friendUid}')" style="
+              background:var(--orange-glow); border:1px solid var(--orange);
+              color:var(--orange); border-radius:6px; padding:5px 10px;
+              font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px;
+            ">VIEW →</button>
+            <button onclick="deleteFriend('${friendUid}')" style="
+              background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3);
+              color:var(--red); border-radius:6px; padding:5px 10px;
+              font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px;
+              transition:all 0.2s;
+            " onmouseover="this.style.background='var(--red)';this.style.color='#fff'"
+               onmouseout="this.style.background='rgba(239,68,68,0.15)';this.style.color='var(--red)'">
+              🗑 REMOVE
+            </button>
+          </div>
         </div>`;
     });
     container.innerHTML = html;
   } catch (err) {
     console.error('Friend list load failed', err);
     container.innerHTML = `<div style="color:var(--red); font-size:13px;">Unable to load friends.</div>`;
+  }
+}
+
+async function deleteFriend(friendUid) {
+  if(!confirm('Remove this friend?')) return;
+  if(!window.currentUser) return;
+  try {
+    const friendRef = doc(db, 'friends', window.currentUser.uid);
+    const snap = await getDoc(friendRef);
+    if(!snap.exists()) return;
+    const connections = snap.data().connections || {};
+    delete connections[friendUid];
+    await setDoc(friendRef, { connections }, { merge: false });
+    toast('Friend removed.');
+    loadFriendList();
+    const matchContainer = document.getElementById('friendMatches');
+    if(matchContainer) matchContainer.innerHTML = '';
+  } catch(err) {
+    console.error('Delete friend failed', err);
+    toast('Unable to remove friend.');
   }
 }
 
