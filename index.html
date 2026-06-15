@@ -212,7 +212,7 @@ async function deleteFriend(friendUid) {
         const eff = o.overallAtkEff;
         const effColor = eff >= 50 ? 'var(--green)' : eff >= 35 ? 'var(--orange)' : 'var(--red)';
         html += `
-          <div style="background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:16px; margin-bottom:12px;">
+          <div style="background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:16px; margin-bottom:12px; cursor:pointer;" onclick="showFriendMatchDetail('${docSnap.id}', ${JSON.stringify(match).replace(/'/g, "&#39;")})">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
               <div>
                 <div style="font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--white); letter-spacing:1px;">${match.config?.matchName || 'Match'}</div>
@@ -220,7 +220,7 @@ async function deleteFriend(friendUid) {
               </div>
               <div style="text-align:right;">
                 <div style="font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:800; color:${effColor};">${eff ? eff.toFixed(1)+'%' : '—'}</div>
-                <div style="font-size:10px; color:var(--gray-dim); text-transform:uppercase; letter-spacing:0.5px;">Atk Eff</div>
+                <div style="font-size:10px; color:var(--gray-dim); text-transform:uppercase; letter-spacing:0.5px;">Atk Eff — Click to expand full dossier</div>
               </div>
             </div>
             <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(100px,1fr)); gap:8px;">
@@ -229,7 +229,8 @@ async function deleteFriend(friendUid) {
               ${o.totalPasses > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallPasser?.toFixed(2)}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
               ${o.totalBlockAtt > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallBlockRate?.toFixed(1)}%</div><div class="hcs-label">Block%</div></div>` : ''}
             </div>
-          </div>`;
+          </div>
+          <div id="friendMatchDetail-${docSnap.id}"></div>`;
       });
     }
     html += '</div>';
@@ -1830,29 +1831,88 @@ function showHistoryDetail(id) {
   if(!match) return;
 
   const detail = document.getElementById('historyDetail');
-  const o = match.overall || {};
-
-  let html = `<div style="border-top:1px solid var(--border); padding-top:24px; animation: fadeIn 0.2s ease;">
-    <div style="font-family:'Bebas Neue',sans-serif; font-size:32px; color:var(--white); letter-spacing:2px; margin-bottom:4px;">${match.config?.matchName} DATA DOSSIER</div>
-    <div style="font-size:13px; color:var(--gray-dim); margin-bottom:20px; font-weight:500;">Logged profile: ${match.config?.playerName} • ${match.config?.matchDate}</div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; margin-bottom:20px;">`;
-
-  const stats = [];
-  if(o.totalServes>0) stats.push(['Serve Accuracy', o.overallServeAcc.toFixed(1)+'%']);
-  if(o.totalAttempts>0) stats.push(['Atk Efficiency', o.overallAtkEff.toFixed(1)+'%']);
-  if(o.totalPasses>0) stats.push(['Passer Rating', o.overallPasser.toFixed(2)+'/3.0']);
-  if(o.totalBlockAtt>0) stats.push(['Block Kill%', o.overallBlockRate.toFixed(1)+'%']);
-
-  stats.forEach(([l,v]) => {
-    html += `<div style="background:var(--bg-card2); border-top:1px solid var(--border-dim); border-radius:8px; padding:16px; text-align:center;">
-      <div style="font-family:'JetBrains Mono',monospace; font-size:24px; color:var(--orange); font-weight:800;">${v}</div>
-      <div style="font-size:10px; color:var(--gray-dim); text-transform:uppercase; letter-spacing:0.5px; font-weight:700; margin-top:4px;">${l}</div>
+  detail.innerHTML = `
+    <div style="border-top:1px solid var(--border); padding-top:24px; animation: fadeIn 0.2s ease;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:4px;">Full Match Dossier</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:32px; color:var(--white); letter-spacing:2px;">${match.config?.matchName}</div>
+          <div style="font-size:13px; color:var(--gray-dim); font-weight:500;">${match.config?.playerName} • ${match.config?.matchDate}</div>
+        </div>
+        <button class="btn btn-ghost" onclick="document.getElementById('historyDetail').innerHTML=''; " style="flex-shrink:0;">✕ Close</button>
+      </div>
+      <div id="historyDetailAnalytics"></div>
     </div>`;
-  });
 
-  html += '</div></div>';
-  detail.innerHTML = html;
+  // Temporarily point analyticsOutput to our detail container, render, then restore
+  const realOutput = document.getElementById('analyticsOutput');
+  const realMeta = document.getElementById('resultsMeta');
+  const tempOutput = document.getElementById('historyDetailAnalytics');
+
+  // Save original contents
+  const savedOutput = realOutput.innerHTML;
+  const savedMeta = realMeta.textContent;
+
+  // Swap, render, swap back
+  realOutput.id = '_hidden_output';
+  tempOutput.id = 'analyticsOutput';
+  realMeta.id = '_hidden_meta';
+
+  const fakeMeta = document.createElement('div');
+  fakeMeta.id = 'resultsMeta';
+  fakeMeta.style.display = 'none';
+  document.body.appendChild(fakeMeta);
+
+  renderAnalytics(match);
+
+  // Restore IDs
+  tempOutput.id = 'historyDetailAnalytics';
+  realOutput.id = 'analyticsOutput';
+  realOutput.innerHTML = savedOutput;
+  fakeMeta.remove();
+  realMeta.id = 'resultsMeta';
+  realMeta.textContent = savedMeta;
+
   detail.scrollIntoView({behavior:'smooth'});
+}
+
+function showFriendMatchDetail(matchId, match) {
+  const container = document.getElementById('friendMatchDetail-' + matchId);
+  if(!container) return;
+
+  // Toggle close if already open
+  if(container.innerHTML !== '') { container.innerHTML = ''; return; }
+
+  container.innerHTML = `<div style="border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; animation: fadeIn 0.2s ease;">
+    <div id="fmd-analytics-${matchId}"></div>
+  </div>`;
+
+  const realOutput = document.getElementById('analyticsOutput');
+  const realMeta = document.getElementById('resultsMeta');
+  const tempOutput = document.getElementById('fmd-analytics-' + matchId);
+
+  const savedOutput = realOutput.innerHTML;
+  const savedMeta = realMeta.textContent;
+
+  realOutput.id = '_hidden_output';
+  tempOutput.id = 'analyticsOutput';
+  realMeta.id = '_hidden_meta';
+
+  const fakeMeta = document.createElement('div');
+  fakeMeta.id = 'resultsMeta';
+  fakeMeta.style.display = 'none';
+  document.body.appendChild(fakeMeta);
+
+  renderAnalytics(match);
+
+  tempOutput.id = 'fmd-analytics-' + matchId;
+  realOutput.id = 'analyticsOutput';
+  realOutput.innerHTML = savedOutput;
+  fakeMeta.remove();
+  realMeta.id = 'resultsMeta';
+  realMeta.textContent = savedMeta;
+
+  container.scrollIntoView({behavior:'smooth'});
 }
 
 function toast(msg) {
