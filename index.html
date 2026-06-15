@@ -410,9 +410,11 @@ async function deleteFriend(friendUid) {
     line-height: 1.6;
     min-height: 100vh;
     overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-  }
+}
 
   /* ─── SCROLLBAR ─────────────────────────────────────────────────────── */
   ::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -468,7 +470,7 @@ async function deleteFriend(friendUid) {
   .nav-tabs::-webkit-scrollbar { display: none; }
   .nav-tab { padding: 6px 14px; font-size: 10px; white-space: nowrap; flex-shrink: 0; }
   .nav-quote { display: none; }
-  #app { padding-top: 120px !important; }
+  #app { padding-top: 160px !important; }
 }
 
   .nav-logo {
@@ -516,7 +518,7 @@ async function deleteFriend(friendUid) {
   @media (max-width: 900px) { .nav-quote { display: none; } }
 
   /* ─── MAIN CONTENT ───────────────────────────────────────────────────── */
-  #app { padding: 88px 24px 40px; max-width: 1200px; margin: 0 auto; }
+  #app { padding: 88px 24px 40px; max-width: 1200px; margin: 0 auto; overflow-y: auto; }
 
   /* ─── SCREENS ────────────────────────────────────────────────────────── */
   .screen { display: none; animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1); }
