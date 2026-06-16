@@ -252,13 +252,15 @@ async function deleteFriend(friendUid) {
     if(snapshot.empty) {
       html += `<div class="empty-state" style="padding:30px 0;"><div class="empty-icon" style="font-size:36px; margin-bottom:10px;">🏐</div><h3 style="font-size:18px;">No Shared Matches</h3><p>@${friendName} hasn't shared any matches yet.</p></div>`;
     } else {
+      window.__friendMatchCache = window.__friendMatchCache || {};
       snapshot.docs.forEach(docSnap => {
         const match = docSnap.data();
+        window.__friendMatchCache[docSnap.id] = match;
         const o = match.overall || {};
         const eff = o.overallAtkEff;
         const effColor = eff >= 50 ? 'var(--green)' : eff >= 35 ? 'var(--orange)' : 'var(--red)';
         html += `
-          <div style="background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:16px; margin-bottom:12px; cursor:pointer;" onclick="showFriendMatchDetail('${docSnap.id}', ${JSON.stringify(match).replace(/'/g, "&#39;")})">
+          <div style="background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:16px; margin-bottom:12px; cursor:pointer;" onclick="showFriendMatchDetail('${docSnap.id}', window.__friendMatchCache['${docSnap.id}'])">
             <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
               <div>
                 <div style="font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--white); letter-spacing:1px;">${match.config?.matchName || 'Match'}</div>
@@ -2012,9 +2014,18 @@ function showFriendMatchDetail(matchId, match) {
   // Toggle close if already open
   if(container.innerHTML !== '') { container.innerHTML = ''; return; }
 
-  container.innerHTML = `<div style="border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; animation: fadeIn 0.2s ease;">
-    <div id="fmd-analytics-${matchId}"></div>
-  </div>`;
+  container.innerHTML = `
+    <div style="border:1px solid var(--border); border-radius:12px; padding:20px; margin-bottom:16px; animation: fadeIn 0.2s ease;">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+        <div>
+          <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:4px;">Full Match Dossier</div>
+          <div style="font-family:'Bebas Neue',sans-serif; font-size:32px; color:var(--white); letter-spacing:2px;">${match.config?.matchName || 'Match'}</div>
+          <div style="font-size:13px; color:var(--gray-dim); font-weight:500;">${match.config?.playerName || ''} • ${match.config?.matchDate || ''}</div>
+        </div>
+        <button class="btn btn-ghost" onclick="document.getElementById('friendMatchDetail-${matchId}').innerHTML='';" style="flex-shrink:0;">✕ Close</button>
+      </div>
+      <div id="fmd-analytics-${matchId}"></div>
+    </div>`;
 
   const realOutput = document.getElementById('analyticsOutput');
   const realMeta = document.getElementById('resultsMeta');
@@ -2041,7 +2052,7 @@ function showFriendMatchDetail(matchId, match) {
   realMeta.id = 'resultsMeta';
   realMeta.textContent = savedMeta;
 
-  container.scrollIntoView({behavior:'smooth'});
+  container.scrollIntoView({ behavior: 'smooth' });
 }
 
 function loadProfileScreen() {
