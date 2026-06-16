@@ -1994,6 +1994,51 @@ function deleteMatch(id) {
   }
 }
 
+async function toggleMatchShareFromHistory(id, btn) {
+  // Find the match in cache or localStorage
+  let match;
+  if(window.currentUser) {
+    match = window.historyCache.find(m => m.id === id);
+  } else {
+    const history = getHistory();
+    match = history.find(m => m.id === id);
+  }
+  if(!match) { toast('Match not found.'); return; }
+
+  const newShared = !match.shared;
+
+  if(window.currentUser && window.fb) {
+    try {
+      const { setDoc, doc } = window.fb;
+      await setDoc(doc(window.fb.db, 'matches', id), { shared: newShared }, { merge: true });
+      // Update cache
+      match.shared = newShared;
+      // Update button appearance instantly
+      btn.textContent = newShared ? '✓ Shared' : '○ Private';
+      btn.style.background = newShared ? 'rgba(16,185,129,0.15)' : 'rgba(255,107,0,0.12)';
+      btn.style.border = `1px solid ${newShared ? 'rgba(16,185,129,0.4)' : 'rgba(255,107,0,0.3)'}`;
+      btn.style.color = newShared ? 'var(--green)' : 'var(--orange)';
+      toast(newShared ? 'Match is now shared with friends!' : 'Match is now private.');
+    } catch(err) {
+      console.error('Share toggle failed', err);
+      toast('Unable to update share status.');
+    }
+  } else {
+    // Guest: update localStorage
+    const history = getHistory();
+    const idx = history.findIndex(m => m.id === id);
+    if(idx === -1) return;
+    history[idx].shared = newShared;
+    localStorage.setItem('vb_history', JSON.stringify(history));
+    match.shared = newShared;
+    btn.textContent = newShared ? '✓ Shared' : '○ Private';
+    btn.style.background = newShared ? 'rgba(16,185,129,0.15)' : 'rgba(255,107,0,0.12)';
+    btn.style.border = `1px solid ${newShared ? 'rgba(16,185,129,0.4)' : 'rgba(255,107,0,0.3)'}`;
+    btn.style.color = newShared ? 'var(--green)' : 'var(--orange)';
+    toast(newShared ? 'Match is now shared!' : 'Match is now private.');
+  }
+}
+
 function renderFriends() {
   const container = document.getElementById('friendsContent');
   if(!container) return;
@@ -2045,26 +2090,33 @@ function renderHistory() {
   history.forEach((m) => {
     const o = m.overall || {};
     html += `<div class="history-card">
-      <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:8px;">
-        <div class="history-card-name" style="margin-bottom:0;">${m.config?.matchName || 'Match'}</div>
-        <button onclick="deleteMatch('${m.id}')" style="
-          background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3);
-          color:var(--red); border-radius:6px; padding:4px 10px;
-          font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px;
-          flex-shrink:0; margin-left:8px; transition:all 0.2s;
-        " onmouseover="this.style.background='var(--red)';this.style.color='#fff'"
-           onmouseout="this.style.background='rgba(239,68,68,0.15)';this.style.color='var(--red)'">
-          🗑 DELETE
-        </button>
-      </div>
-      <div class="history-card-meta" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">${m.config?.playerName || ''} • ${m.config?.matchDate || ''} • ${m.config?.setCount || '?'} Sets Tracked</div>
-      <div class="history-card-stats" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">
-        ${o.totalServes > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallServeAcc?.toFixed(1)}%</div><div class="hcs-label">Serve%</div></div>` : ''}
-        ${o.totalAttempts > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallAtkEff?.toFixed(1)}%</div><div class="hcs-label">Atk Eff%</div></div>` : ''}
-        ${o.totalPasses > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallPasser?.toFixed(2)}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
-        ${o.totalBlockAtt > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallBlockRate?.toFixed(1)}%</div><div class="hcs-label">Block%</div></div>` : ''}
-      </div>
-    </div>`;
+  <div style="display:flex; align-items:flex-start; justify-content:space-between; margin-bottom:8px;">
+    <div class="history-card-name" style="margin-bottom:0;">${m.config?.matchName || 'Match'}</div>
+    <div style="display:flex; gap:6px; flex-shrink:0; margin-left:8px;">
+      <button onclick="toggleMatchShareFromHistory('${m.id}', this)" style="
+        background:${m.shared ? 'rgba(16,185,129,0.15)' : 'rgba(255,107,0,0.12)'};
+        border:1px solid ${m.shared ? 'rgba(16,185,129,0.4)' : 'rgba(255,107,0,0.3)'};
+        color:${m.shared ? 'var(--green)' : 'var(--orange)'}; border-radius:6px; padding:4px 10px;
+        font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px; transition:all 0.2s;
+      ">${m.shared ? '✓ Shared' : '○ Private'}</button>
+      <button onclick="deleteMatch('${m.id}')" style="
+        background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3);
+        color:var(--red); border-radius:6px; padding:4px 10px;
+        font-size:11px; font-weight:700; cursor:pointer; letter-spacing:0.5px; transition:all 0.2s;
+      " onmouseover="this.style.background='var(--red)';this.style.color='#fff'"
+         onmouseout="this.style.background='rgba(239,68,68,0.15)';this.style.color='var(--red)'">
+        🗑 DELETE
+      </button>
+    </div>
+  </div>
+  <div class="history-card-meta" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">${m.config?.playerName || ''} • ${m.config?.matchDate || ''} • ${m.config?.setCount || '?'} Sets Tracked</div>
+  <div class="history-card-stats" onclick="showHistoryDetail('${m.id}')" style="cursor:pointer;">
+    ${o.totalServes > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallServeAcc?.toFixed(1)}%</div><div class="hcs-label">Serve%</div></div>` : ''}
+    ${o.totalAttempts > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallAtkEff?.toFixed(1)}%</div><div class="hcs-label">Atk Eff%</div></div>` : ''}
+    ${o.totalPasses > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallPasser?.toFixed(2)}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
+    ${o.totalBlockAtt > 0 ? `<div class="hcs"><div class="hcs-val">${o.overallBlockRate?.toFixed(1)}%</div><div class="hcs-label">Block%</div></div>` : ''}
+  </div>
+</div>`;
   });
   html += '</div>';
 
