@@ -1358,6 +1358,14 @@ function renderMetrics(idx) {
     const gb = section('Net Perimeter Defense');
     stepper(gb, 'monsterBlocks', 'Monster Solo Blocks');
     stepper(gb, 'blockTouches', 'Defensive Net Touches');
+
+    const gsp = section('Serve Reception & Passing');
+    stepper(gsp, 'pass3', 'Perfect 3-Pass (Stationary)');
+    stepper(gsp, 'pass2', 'Good 2-Pass (Displaced)');
+    stepper(gsp, 'pass1', 'OOS 1-Pass (Scrambled)');
+    stepper(gsp, 'passShank', 'Shanked Pass / Ace Conceded');
+    stepper(gsp, 'overPasses', 'Overpass Violations Conceded');
+    stepper(gsp, 'passErrors', 'Passing Platform Errors');
   }
 
   if(isHitter) {
