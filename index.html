@@ -1700,7 +1700,6 @@ function toggleMatchShare() {
 
 function saveMatch() {
   if(!compiledAnalytics){ toast('No data compiled to commit!'); return; }
-  const history = getHistory();
   const id = Date.now().toString();
   const record = {
     id,
@@ -1711,9 +1710,9 @@ function saveMatch() {
     shared: currentMatchShared,
     ...compiledAnalytics
   };
-  history.unshift(record);
 
   if(window.currentUser && window.fb) {
+    // Signed-in: Firebase only, no localStorage
     const { setDoc, doc } = window.fb;
     setDoc(doc(window.fb.db, 'matches', id), record)
       .then(() => {
@@ -1727,6 +1726,9 @@ function saveMatch() {
         toast('Saved locally, but Firebase sync failed.');
       });
   } else {
+    // Guest: localStorage only
+    const history = getHistory();
+    history.unshift(record);
     localStorage.setItem('vb_history', JSON.stringify(history));
     toast('Match committed to local History Hub database!');
     currentMatchShared = false;
