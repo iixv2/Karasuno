@@ -1505,9 +1505,12 @@ function compileAnalytics() {
     sa.totalPasses = totalPasses;
     sa.totalSets = totalSets;
     sa.totalAttempts = totalAttempts;
-    sa.kills = totalKills; sa.attErrors = attackFaults; sa.attBlocked = attackBlocked;
+    sa.kills = totalKills;
+    sa.attErrors = attackFaults;
+    sa.attBlocked = attackBlocked;
+    sa.totalSets = totalSets;
     sa.totalBlockAtt = totalBlockAtt;
-    sa.metrics = {...m};
+    sa.metrics = JSON.parse(JSON.stringify(m));
     setAnalytics.push(sa);
 
     keys.forEach(k => all[k] += (m[k]||0));
