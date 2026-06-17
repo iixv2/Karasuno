@@ -32,7 +32,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, doc, deleteDoc, getDocs, collection, query, where };
+  window.fb = { auth, db, provider, setDoc, doc, deleteDoc, getDocs, getDoc, collection, query, where };
   window.currentUser = null;
   window.currentUsername = null;
   window.historyCache = [];
