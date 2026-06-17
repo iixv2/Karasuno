@@ -2670,6 +2670,7 @@ function runCourtClash() {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
             <div class="hcs"><div class="hcs-val" style="color:var(--orange);">${mySet.score || 0}</div><div class="hcs-label">Points</div></div>
             ${mySet.serveAcc ? `<div class="hcs"><div class="hcs-val">${mySet.serveAcc}%</div><div class="hcs-label">Serve%</div></div>` : ''}
+            ${mySet.setAcc ? `<div class="hcs"><div class="hcs-val">${mySet.setAcc}%</div><div class="hcs-label">Set Acc</div></div>` : ''}
             ${mySet.atkEff && mySet.atkEff > 0 ? `<div class="hcs"><div class="hcs-val">${mySet.atkEff}%</div><div class="hcs-label">Atk Eff</div></div>` : ''}
             ${mySet.passerRating ? `<div class="hcs"><div class="hcs-val">${mySet.passerRating}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
             ${mySet.blockRate ? `<div class="hcs"><div class="hcs-val">${mySet.blockRate}%</div><div class="hcs-label">Block%</div></div>` : ''}
@@ -2686,6 +2687,7 @@ function runCourtClash() {
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
             <div class="hcs"><div class="hcs-val" style="color:var(--red);">${frSet.score || 0}</div><div class="hcs-label">Points</div></div>
             ${frSet.serveAcc ? `<div class="hcs"><div class="hcs-val">${frSet.serveAcc}%</div><div class="hcs-label">Serve%</div></div>` : ''}
+            ${frSet.setAcc ? `<div class="hcs"><div class="hcs-val">${frSet.setAcc}%</div><div class="hcs-label">Set Acc</div></div>` : ''}
             ${frSet.atkEff && frSet.atkEff > 0 ? `<div class="hcs"><div class="hcs-val">${frSet.atkEff}%</div><div class="hcs-label">Atk Eff</div></div>` : ''}
             ${frSet.passerRating ? `<div class="hcs"><div class="hcs-val">${frSet.passerRating}</div><div class="hcs-label">Pass Rtg</div></div>` : ''}
             ${frSet.blockRate ? `<div class="hcs"><div class="hcs-val">${frSet.blockRate}%</div><div class="hcs-label">Block%</div></div>` : ''}
