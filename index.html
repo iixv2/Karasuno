@@ -2573,6 +2573,7 @@ function runCourtClash() {
 
   const categories = [
     { label: 'Serve Accuracy', myVal: myO.totalServes > 0 ? myO.overallServeAcc : null, frVal: frO.totalServes > 0 ? frO.overallServeAcc : null, unit: '%', decimals: 1 },
+    { label: 'Setting Flow Accuracy', myVal: myO.totalSetLog > 0 ? myO.overallSetAcc : null, frVal: frO.totalSetLog > 0 ? frO.overallSetAcc : null, unit: '%', decimals: 1 },
     { label: 'Attack Efficiency', myVal: myO.totalAttempts > 0 ? myO.overallAtkEff : null, frVal: frO.totalAttempts > 0 ? frO.overallAtkEff : null, unit: '%', decimals: 1 },
     { label: 'Passer Rating', myVal: myO.totalPasses > 0 ? myO.overallPasser : null, frVal: frO.totalPasses > 0 ? frO.overallPasser : null, unit: '/3.0', decimals: 2 },
     { label: 'Block Kill Rate', myVal: myO.totalBlockAtt > 0 ? myO.overallBlockRate : null, frVal: frO.totalBlockAtt > 0 ? frO.overallBlockRate : null, unit: '%', decimals: 1 },
