@@ -375,6 +375,7 @@ async function deleteFriend(friendUid) {
       syncUserProfile(user);
       loadUserHistory();
       loadFriendList();
+      loadFriendRequests();
     }
   }
 
@@ -539,6 +540,7 @@ async function loadFriendRequests() {
 
 window.acceptFriendRequest = acceptFriendRequest;
 window.declineFriendRequest = declineFriendRequest;
+window.loadFriendRequests = loadFriendRequests;
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
