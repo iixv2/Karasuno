@@ -213,16 +213,22 @@ async function deleteFriend(friendUid) {
       const currentFriendsSnap = await getDoc(friendRef);
       const currentConnections = currentFriendsSnap.exists() ? currentFriendsSnap.data().connections || {} : {};
       if (currentConnections[friendUid]) { toast('This friend is already added.'); return; }
-      currentConnections[friendUid] = {
-        email: friendData.email,
-        username: friendData.username || friendData.email.split('@')[0],
-        name: friendData.displayName || friendData.username || friendData.email,
-        photoURL: friendData.photoURL || ''
+      // Send a friend request instead of directly adding
+      const requestRef = doc(db, 'friendRequests', friendUid);
+      const requestSnap = await getDoc(requestRef);
+      const requests = requestSnap.exists() ? requestSnap.data().incoming || {} : {};
+      
+      if(requests[window.currentUser.uid]) { toast('Friend request already sent.'); return; }
+      
+      requests[window.currentUser.uid] = {
+        email: window.currentUser.email,
+        username: window.currentUsername || window.currentUser.email.split('@')[0],
+        displayName: window.currentUser.displayName || '',
+        sentAt: new Date().toISOString()
       };
-      await setDoc(friendRef, { connections: currentConnections }, { merge: true });
-      toast('Friend added successfully.');
+      await setDoc(requestRef, { incoming: requests }, { merge: true });
+      toast('Friend request sent!');
       input.value = '';
-      loadFriendList();
     } catch (err) {
       console.error('Add friend failed', err);
       toast('Unable to add friend.');
@@ -450,6 +456,89 @@ async function deleteFriend(friendUid) {
     updateAuthUI(user);
   });
 }
+
+async function acceptFriendRequest(senderUid, senderData) {
+  if(!window.currentUser) return;
+  try {
+    // Add sender to my friends
+    const myFriendRef = doc(db, 'friends', window.currentUser.uid);
+    const mySnap = await getDoc(myFriendRef);
+    const myConnections = mySnap.exists() ? mySnap.data().connections || {} : {};
+    myConnections[senderUid] = {
+      email: senderData.email,
+      username: senderData.username,
+      name: senderData.displayName || senderData.username,
+      photoURL: senderData.photoURL || ''
+    };
+    await setDoc(myFriendRef, { connections: myConnections }, { merge: false });
+
+    // Add me to sender's friends
+    const theirFriendRef = doc(db, 'friends', senderUid);
+    const theirSnap = await getDoc(theirFriendRef);
+    const theirConnections = theirSnap.exists() ? theirSnap.data().connections || {} : {};
+    theirConnections[window.currentUser.uid] = {
+      email: window.currentUser.email,
+      username: window.currentUsername,
+      name: window.currentUser.displayName || window.currentUsername,
+      photoURL: window.currentUser.photoURL || ''
+    };
+    await setDoc(theirFriendRef, { connections: theirConnections }, { merge: false });
+
+    // Remove the request
+    await removeRequest(senderUid);
+    toast('Friend request accepted!');
+    loadFriendList();
+    loadFriendRequests();
+  } catch(err) {
+    console.error('Accept failed', err);
+    toast('Unable to accept request.');
+  }
+}
+
+async function declineFriendRequest(senderUid) {
+  await removeRequest(senderUid);
+  toast('Request declined.');
+  loadFriendRequests();
+}
+
+async function removeRequest(senderUid) {
+  const requestRef = doc(db, 'friendRequests', window.currentUser.uid);
+  const snap = await getDoc(requestRef);
+  if(!snap.exists()) return;
+  const incoming = snap.data().incoming || {};
+  delete incoming[senderUid];
+  await setDoc(requestRef, { incoming }, { merge: false });
+}
+
+async function loadFriendRequests() {
+  const container = document.getElementById('friendRequestsList');
+  if(!container || !window.currentUser) return;
+  try {
+    const snap = await getDoc(doc(db, 'friendRequests', window.currentUser.uid));
+    const incoming = snap.exists() ? snap.data().incoming || {} : {};
+    if(Object.keys(incoming).length === 0) {
+      container.innerHTML = '';
+      return;
+    }
+    let html = `<div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:12px;">Incoming Requests</div>`;
+    Object.entries(incoming).forEach(([senderUid, data]) => {
+      html += `<div style="display:flex; align-items:center; gap:12px; padding:12px; border-radius:8px; border:1px solid var(--border); background:var(--bg-mid); margin-bottom:10px;">
+        <div style="flex:1;">
+          <div style="font-weight:700; color:var(--white); font-size:14px;">@${data.username}</div>
+          <div style="font-size:11px; color:var(--gray-dim);">${data.email}</div>
+        </div>
+        <button onclick="acceptFriendRequest('${senderUid}', ${JSON.stringify(data).replace(/"/g, '&quot;')})" style="background:var(--green); border:none; color:#000; border-radius:6px; padding:6px 12px; font-size:11px; font-weight:800; cursor:pointer; letter-spacing:0.5px;">✓ ACCEPT</button>
+        <button onclick="declineFriendRequest('${senderUid}')" style="background:rgba(239,68,68,0.15); border:1px solid rgba(239,68,68,0.3); color:var(--red); border-radius:6px; padding:6px 12px; font-size:11px; font-weight:800; cursor:pointer;">✕ DECLINE</button>
+      </div>`;
+    });
+    container.innerHTML = html;
+  } catch(err) {
+    console.error('Load requests failed', err);
+  }
+}
+
+window.acceptFriendRequest = acceptFriendRequest;
+window.declineFriendRequest = declineFriendRequest;
 </script>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700;800&family=Orbitron:wght@400;700;900&display=swap');
@@ -2111,14 +2200,15 @@ function renderFriends() {
       </div>
       <div class="analytics-card">
         <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Your Friends</div>
-        <div id="friendsList"></div>
+        <div id="friendRequestsList"></div>
+                <div id="friendsList"></div>
       </div>
     </div>
     <div id="friendMatches" style="margin-top:24px;"></div>
   `;
 
   container.innerHTML = html;
-  if(signedIn) loadFriendList();
+  if(signedIn) { loadFriendList(); loadFriendRequests(); }
 }
 
 function renderHistory() {
