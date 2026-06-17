@@ -178,12 +178,23 @@ async function deleteFriend(friendUid) {
   if(!confirm('Remove this friend?')) return;
   if(!window.currentUser) return;
   try {
+    // Remove them from my friends list
     const friendRef = doc(db, 'friends', window.currentUser.uid);
     const snap = await getDoc(friendRef);
     if(!snap.exists()) return;
     const connections = snap.data().connections || {};
     delete connections[friendUid];
     await setDoc(friendRef, { connections }, { merge: false });
+
+    // Remove me from their friends list
+    const theirRef = doc(db, 'friends', friendUid);
+    const theirSnap = await getDoc(theirRef);
+    if(theirSnap.exists()) {
+      const theirConnections = theirSnap.data().connections || {};
+      delete theirConnections[window.currentUser.uid];
+      await setDoc(theirRef, { connections: theirConnections }, { merge: false });
+    }
+
     toast('Friend removed.');
     loadFriendList();
     const matchContainer = document.getElementById('friendMatches');
