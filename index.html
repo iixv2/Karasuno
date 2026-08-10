@@ -3170,21 +3170,16 @@ function mmRenderLobby() {
 
   // Targets
   const grid = document.getElementById('mmTargetGrid');
-  const others = players.filter(p => p.uid !== window.currentUser.uid);
-  grid.innerHTML = others.map(p => {
-    const selected = (myPlayer?.targets||[]).includes(p.uid);
-    const pickedMe = (p.targets||[]).includes(window.currentUser.uid);
-    const hasPickedAnyone = (p.targets||[]).length > 0;
-    let statusLabel, statusColor;
-    if(pickedMe) { statusLabel = '💚 Picked You'; statusColor = 'var(--green)'; }
-    else if(hasPickedAnyone) { statusLabel = '➡️ Picked Someone Else'; statusColor = 'var(--gray-dim)'; }
-    else { statusLabel = '— Hasn\'t Picked Yet'; statusColor = 'var(--gray-dark)'; }
-    return `<div class="mm-target-card ${selected?'selected':''}" onclick="mmToggleTarget('${p.uid}')">
-      <div style="font-weight:700; color:var(--white); font-size:14px;">${p.name}</div>
-      <div class="mm-role-tag">${p.role ? MM_ROLE_LABEL[p.role] : 'Unassigned'}</div>
-      <div style="font-size:10px; font-weight:700; margin-top:4px; color:${statusColor};">${statusLabel}</div>
-    </div>`;
-  }).join('') || '<div style="color:var(--gray-dim); font-size:13px;">No other players yet — share the code!</div>';
+const others = players.filter(p => p.uid !== window.currentUser.uid);
+grid.innerHTML = others.map(p => {
+  const selected = (myPlayer?.targets||[]).includes(p.uid);
+  const pickedMe = (p.targets||[]).includes(window.currentUser.uid);
+  return `<div class="mm-target-card ${selected?'selected':''}" onclick="mmToggleTarget('${p.uid}')">
+    <div style="font-weight:700; color:var(--white); font-size:14px;">${p.name}</div>
+    <div class="mm-role-tag">${p.role ? MM_ROLE_LABEL[p.role] : 'Unassigned'}</div>
+    ${pickedMe ? `<div style="font-size:10px; font-weight:700; margin-top:4px; color:var(--green);">💚 Picked You</div>` : ''}
+  </div>`;
+}).join('') || '<div style="color:var(--gray-dim); font-size:13px;">No other players yet — share the code!</div>';
 
   // Conflict warning
   const warn = document.getElementById('mmConflictWarning');
@@ -3233,13 +3228,32 @@ async function mmSelectRole(role) {
   await updateDoc(ref, update);
 }
 
+function mmPickWouldConflict(myRole, targetPlayer, room) {
+  if(!MM_EXCLUSIVE.includes(myRole)) return null;
+  for(const tid of (targetPlayer.targets || [])) {
+    const other = room.players[tid];
+    if(other && other.role === myRole) return other;
+  }
+  return null;
+}
+
 async function mmToggleTarget(targetUid) {
   const { updateDoc, doc, arrayUnion, arrayRemove, db } = window.fb;
   const ref = doc(db, 'matchmakerRooms', mmRoomCode);
   const uid = window.currentUser.uid;
-  const myTargets = mmCurrentRoom.players[uid]?.targets || [];
+  const myPlayer = mmCurrentRoom.players[uid];
+  const isSelecting = !(myPlayer?.targets||[]).includes(targetUid);
+
+  if(isSelecting && myPlayer?.role) {
+    const targetPlayer = mmCurrentRoom.players[targetUid];
+    const conflict = mmPickWouldConflict(myPlayer.role, targetPlayer, mmCurrentRoom);
+    if(conflict) {
+      toast(`⚠️ ${targetPlayer.name} already picked ${conflict.name}, who plays your position (${MM_ROLE_LABEL[myPlayer.role]}). Only one of you can end up on their team.`);
+    }
+  }
+
   const field = `players.${uid}.targets`;
-  await updateDoc(ref, { [field]: myTargets.includes(targetUid) ? arrayRemove(targetUid) : arrayUnion(targetUid) });
+  await updateDoc(ref, { [field]: isSelecting ? arrayUnion(targetUid) : arrayRemove(targetUid) });
 }
 
 function mmSlotOpen(teamData, role) {
@@ -3250,39 +3264,81 @@ function mmAssignToTeam(teamsObj, t, p) {
   if(p.role === 'OH') teamsObj[t].OH.push(p.uid); else teamsObj[t][p.role] = p.uid;
 }
 
-// Live "best guess" grouping from anchors + mutual/targeted picks so far.
-// No fallback fill — open slots just stay open, since the real draft hasn't run.
-function mmComputeLivePreview(room) {
+// ── Shared deterministic team-building engine (MUTUAL picks only) ─────
+function mmUnionFind(ids) {
+  const parent = {};
+  ids.forEach(id => parent[id] = id);
+  function find(x){ while(parent[x]!==x){ parent[x]=parent[parent[x]]; x=parent[x]; } return x; }
+  function union(a,b){ const ra=find(a), rb=find(b); if(ra!==rb) parent[ra]=rb; }
+  return { find, union };
+}
+
+function mmBuildGroups(room) {
+  const players = Object.values(room.players).filter(p => p.role);
+  const byUid = {}; players.forEach(p => byUid[p.uid] = p);
+  const { find, union } = mmUnionFind(players.map(p => p.uid));
+
+  players.forEach(p => {
+    (p.targets||[]).forEach(tid => {
+      const t = byUid[tid];
+      if(t && (t.targets||[]).includes(p.uid)) union(p.uid, tid); // mutual only
+    });
+  });
+
+  const groups = {};
+  players.forEach(p => {
+    const root = find(p.uid);
+    (groups[root] = groups[root] || []).push(p);
+  });
+  return Object.values(groups).sort((a,b) =>
+    Math.min(...a.map(p=>p.joinedAt||0)) - Math.min(...b.map(p=>p.joinedAt||0))
+  );
+}
+
+function mmBuildTeamsFromMutualPicks(room) {
   const N = room.teams;
   const letters = Array.from({length:N}, (_,i) => String.fromCharCode(65+i));
   const teamsObj = {};
   letters.forEach(t => teamsObj[t] = { S:null, OPP:null, OH:[], MB:null, L:null });
+  const assigned = new Set();
 
-  letters.forEach(t => { if(room.anchors[t]) teamsObj[t].S = room.anchors[t]; });
-  const assigned = new Set(Object.values(room.anchors).filter(Boolean));
-  const findTeamOf = uid => letters.find(t => teamsObj[t].S===uid || teamsObj[t].OPP===uid || teamsObj[t].MB===uid || teamsObj[t].L===uid || teamsObj[t].OH.includes(uid));
+  letters.forEach(t => {
+    const uid = room.anchors[t];
+    if(uid && room.players[uid]) { teamsObj[t].S = uid; assigned.add(uid); }
+  });
 
-  let remaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
-  remaining.sort((a,b) => (a.joinedAt||0) - (b.joinedAt||0));
-  let progress = true;
-  while(progress) {
-    progress = false;
-    remaining = remaining.filter(p => !assigned.has(p.uid));
-    remaining.forEach(p => {
-      if(assigned.has(p.uid)) return;
-      for(const targetUid of (p.targets||[])) {
-        const targetTeam = findTeamOf(targetUid);
-        if(targetTeam && mmSlotOpen(teamsObj[targetTeam], p.role)) {
-          mmAssignToTeam(teamsObj, targetTeam, p);
-          assigned.add(p.uid);
-          progress = true;
-          break;
-        }
+  mmBuildGroups(room).forEach(group => {
+    const pool = group.filter(p => !assigned.has(p.uid));
+    if(pool.length === 0) return;
+
+    let targetTeam = letters.find(t => group.some(p => teamsObj[t].S === p.uid));
+    if(!targetTeam) targetTeam = letters.find(t => pool.every(p => mmSlotOpen(teamsObj[t], p.role)));
+    if(!targetTeam) return;
+
+    pool.forEach(p => {
+      if(mmSlotOpen(teamsObj[targetTeam], p.role)) {
+        mmAssignToTeam(teamsObj, targetTeam, p);
+        assigned.add(p.uid);
       }
     });
-  }
+  });
+
+  Object.values(room.players)
+    .filter(p => p.role && !assigned.has(p.uid))
+    .sort((a,b) => (a.joinedAt||0) - (b.joinedAt||0))
+    .forEach(p => {
+      let ti = letters.findIndex(t => mmSlotOpen(teamsObj[t], p.role));
+      for(let i=0; i<letters.length; i++){
+        const t = letters[(ti+i)%letters.length];
+        if(mmSlotOpen(teamsObj[t], p.role)) { mmAssignToTeam(teamsObj, t, p); assigned.add(p.uid); break; }
+      }
+    });
+
   return teamsObj;
 }
+// Live "best guess" grouping from anchors + mutual/targeted picks so far.
+// No fallback fill — open slots just stay open, since the real draft hasn't run.
+function mmComputeLivePreview(room) { return mmBuildTeamsFromMutualPicks(room); }
 
 function mmRenderTeamRoster(t, teamsObj, room) {
   const roster = teamsObj[t];
@@ -3339,59 +3395,7 @@ function mmRenderTeamsPreview(room) {
   }
 }
 
-function mmDraftAlgorithm(room) {
-  const N = room.teams;
-  const letters = Array.from({length:N}, (_,i) => String.fromCharCode(65+i));
-  const teamsObj = {};
-  letters.forEach(t => teamsObj[t] = { S:null, OPP:null, OH:[], MB:null, L:null });
-
-  // Phase 1: anchors
-  letters.forEach(t => { if(room.anchors[t]) teamsObj[t].S = room.anchors[t]; });
-  const assigned = new Set(Object.values(room.anchors).filter(Boolean));
-
-  const findTeamOf = uid => letters.find(t => teamsObj[t].S===uid || teamsObj[t].OPP===uid || teamsObj[t].MB===uid || teamsObj[t].L===uid || teamsObj[t].OH.includes(uid));
-
-  // Phase 2: mutual & targeted
-  let remaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
-  remaining.sort((a,b) => (a.joinedAt||0) - (b.joinedAt||0));
-  let progress = true;
-  while(progress) {
-    progress = false;
-    remaining = remaining.filter(p => !assigned.has(p.uid));
-    remaining.forEach(p => {
-      if(assigned.has(p.uid)) return;
-      for(const targetUid of (p.targets||[])) {
-        const targetTeam = findTeamOf(targetUid);
-        if(targetTeam && mmSlotOpen(teamsObj[targetTeam], p.role)) {
-          mmAssignToTeam(teamsObj, targetTeam, p);
-          assigned.add(p.uid);
-          progress = true;
-          break;
-        }
-      }
-    });
-  }
-
-  // Phase 3: fallback smart fill, round robin, guarantees standard lineup
-  const stillRemaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
-  let ti = 0, guard = 0;
-  stillRemaining.forEach(p => {
-    while(guard < 10000) {
-      const t = letters[ti % N];
-      ti++; guard++;
-      if(mmSlotOpen(teamsObj[t], p.role)) { mmAssignToTeam(teamsObj, t, p); assigned.add(p.uid); break; }
-    }
-  });
-
-  return teamsObj;
-}
-
-async function mmRunDraft() {
-  if(!mmCurrentRoom || window.currentUser.uid !== mmCurrentRoom.hostUid) return;
-  const finalTeams = mmDraftAlgorithm(mmCurrentRoom);
-  const { updateDoc, doc, db } = window.fb;
-  await updateDoc(doc(db, 'matchmakerRooms', mmRoomCode), { finalTeams, status: 'complete' });
-}
+function mmDraftAlgorithm(room) { return mmBuildTeamsFromMutualPicks(room); }
 
 function mmRenderReveal() {
   const room = mmCurrentRoom;
