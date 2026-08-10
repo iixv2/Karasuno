@@ -14,7 +14,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -32,7 +32,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, doc, deleteDoc, getDocs, getDoc, collection, query, where, orderBy };
+  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, getDocs, getDoc, collection, query, where, orderBy };
   window.currentUser = null;
   window.currentUsername = null;
   window.historyCache = [];
@@ -1004,6 +1004,13 @@ window.loadFriendRequests = loadFriendRequests;
   .empty-state { text-align: center; padding: 60px 20px; color: var(--gray-dim); }
   .empty-state .empty-icon { font-size: 56px; margin-bottom: 16px; opacity: 0.3; }
   .empty-state h3 { font-size: 24px; color: var(--white); margin-bottom: 6px; font-family: 'Bebas Neue', sans-serif; letter-spacing: 2px; }
+
+  .mm-anchor-card { background:var(--bg-card); border:1px solid var(--border-dim); border-radius:10px; padding:14px; text-align:center; }
+.mm-anchor-card.filled { border-color:var(--orange); background:linear-gradient(135deg, rgba(255,107,0,0.08), var(--bg-card)); }
+.mm-target-card { background:var(--bg-mid); border:1px solid var(--border-dim); border-radius:8px; padding:10px; cursor:pointer; text-align:center; transition:all 0.15s; }
+.mm-target-card.selected { border-color:var(--orange); background:var(--orange-glow); }
+.mm-role-tag { font-size:10px; letter-spacing:1px; color:var(--orange); font-weight:800; text-transform:uppercase; margin-top:2px; }
+.mm-team-card { background:var(--bg-card); border:1px solid var(--border-dim); border-radius:12px; padding:18px; border-top:3px solid var(--orange); }
 </style>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4487082317458214"
      crossorigin="anonymous"></script>
@@ -1056,6 +1063,7 @@ window.loadFriendRequests = loadFriendRequests;
     <button class="nav-tab" onclick="showScreen('results')" id="navResults">Analytics</button>
     <button class="nav-tab" onclick="showScreen('history')">History Hub</button>
     <button class="nav-tab" onclick="showScreen('versus')">⚔ Court Clash</button>
+    <button class="nav-tab" onclick="showScreen('matchmaker')">🏐 Matchmaker</button>
   </div>
   <div class="nav-actions">
   <button class="btn btn-ghost" id="authButton" onclick="handleAuthAction()">Sign in</button>
@@ -1264,7 +1272,86 @@ window.loadFriendRequests = loadFriendRequests;
 
   <div id="clashOutput"></div>
 </div>
+<!-- ═══════════════════════════════════════════ SCREEN 6: MATCHMAKER ═══ -->
+<div id="screen-matchmaker" class="screen">
 
+  <div id="mmLanding" style="text-align:center; padding:60px 20px;">
+    <div style="font-family:'Bebas Neue',sans-serif; font-size:44px; color:var(--white); letter-spacing:3px; margin-bottom:8px;">VOLLEYBALL <span style="color:var(--orange);">MATCHMAKER</span></div>
+    <div style="font-size:13px; color:var(--gray-dim); margin-bottom:36px;">Draft balanced teams in real time with your crew.</div>
+    <div style="display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+      <button class="btn btn-primary" style="padding:16px 36px;" onclick="mmShowCreate()">+ New Game</button>
+      <button class="btn btn-outline" style="padding:16px 36px;" onclick="mmShowJoin()">Join Game</button>
+    </div>
+  </div>
+
+  <div id="mmCreateForm" style="display:none; max-width:480px; margin:40px auto;">
+    <div class="analytics-card">
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Create Room</div>
+      <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">Number of Teams (N)</label>
+        <div class="set-slider-row">
+          <input type="range" id="mmTeamSlider" min="2" max="8" value="3" oninput="document.getElementById('mmTeamBadge').textContent=this.value" />
+          <div class="set-count-badge" id="mmTeamBadge">3</div>
+        </div>
+        <div style="font-size:11px; color:var(--gray-dim); margin-top:6px;" id="mmCapPreview">Capacity: 18 players (6 per team)</div>
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="mmCreateRoom()">Create & Get Code</button>
+      <button class="btn btn-ghost" style="width:100%; margin-top:8px;" onclick="mmShowLanding()">← Back</button>
+    </div>
+  </div>
+
+  <div id="mmJoinForm" style="display:none; max-width:480px; margin:40px auto;">
+    <div class="analytics-card">
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Join Room</div>
+      <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">6-Character Access Code</label>
+        <input class="field-input" id="mmJoinCode" style="text-transform:uppercase; letter-spacing:4px; text-align:center; font-size:20px;" maxlength="6" placeholder="XXXXXX" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;" onclick="mmJoinRoom()">Join Game</button>
+      <button class="btn btn-ghost" style="width:100%; margin-top:8px;" onclick="mmShowLanding()">← Back</button>
+    </div>
+  </div>
+
+  <div id="mmLobby" style="display:none;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:20px; flex-wrap:wrap; gap:12px;">
+      <div>
+        <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800;">Room Code</div>
+        <div style="font-family:'JetBrains Mono',monospace; font-size:36px; color:var(--white); letter-spacing:6px; font-weight:800;" id="mmCodeDisplay">------</div>
+      </div>
+      <div id="mmFillStatus" style="font-size:13px; color:var(--gray-dim); font-weight:700;"></div>
+      <button class="btn btn-ghost" onclick="mmLeaveRoom()">← Leave Room</button>
+    </div>
+
+    <div id="mmAnchorsRow" style="display:grid; gap:12px; margin-bottom:24px;"></div>
+
+    <div class="analytics-card" style="margin-bottom:20px;" id="mmMyCard">
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:12px;">Your Position</div>
+      <div class="pos-selector" id="mmRoleSelector"></div>
+      <div id="mmConflictWarning" style="display:none; margin-top:12px; padding:10px 14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.35); border-radius:6px; color:var(--red); font-size:13px; font-weight:600;"></div>
+    </div>
+
+    <div class="analytics-card" style="margin-bottom:20px;">
+      <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:12px;">Pick Teammates / Anchors</div>
+      <div id="mmTargetGrid" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px;"></div>
+    </div>
+
+    <div id="mmHostControls" style="display:none; text-align:center; margin-top:24px;">
+      <button class="btn btn-primary" style="padding:14px 40px;" onclick="mmRunDraft()">⚡ Run Draft Resolution</button>
+    </div>
+  </div>
+
+  <div id="mmReveal" style="display:none;">
+    <div style="text-align:center; margin-bottom:28px;">
+      <div style="font-family:'Bebas Neue',sans-serif; font-size:42px; color:var(--white); letter-spacing:3px;">FINAL <span style="color:var(--orange);">ROSTER</span></div>
+    </div>
+    <div id="mmFinalTeams" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:16px; margin-bottom:24px;"></div>
+    <div style="text-align:center;">
+      <button class="btn btn-primary" onclick="mmCopyRoster()">📋 Copy Roster for WhatsApp</button>
+      <button class="btn btn-ghost" onclick="mmLeaveRoom()">← New Session</button>
+    </div>
+  </div>
+
+</div>
 </div>
 
 <!-- PERSISTENT SYSTEM TOAST -->
@@ -1297,13 +1384,14 @@ function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById('screen-' + name).classList.add('active');
   document.querySelectorAll('.nav-tab').forEach((t,i) => {
-  t.classList.toggle('active', ['setup','tracking','friends','results','history','versus'][i] === name);
+  t.classList.toggle('active', ['setup','tracking','friends','results','history','versus','matchmaker'][i] === name);
 });
 if(name === 'profile') loadProfileScreen();
   rotateQuote();
   if(name === 'history') renderHistory();
   if(name === 'friends') renderFriends();
   if(name === 'versus') initCourtClash();
+  if(name === 'matchmaker') mmShowLanding();
 }
 
 function rotateQuote() {
@@ -2891,6 +2979,296 @@ document.addEventListener('click', function(e) {
     playClick();
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════════
+//  VOLLEYBALL MATCHMAKER
+// ═══════════════════════════════════════════════════════════════════════
+const MM_ROLES = ['S','OPP','OH','MB','L'];
+const MM_ROLE_LABEL = { S:'Setter', OPP:'Opposite', OH:'Outside Hitter', MB:'Middle Blocker', L:'Libero' };
+const MM_EXCLUSIVE = ['S','OPP','MB','L']; // 1-per-team roles
+
+let mmRoomCode = null;
+let mmUnsub = null;
+let mmCurrentRoom = null;
+
+document.getElementById('mmTeamSlider')?.addEventListener('input', function(){
+  document.getElementById('mmCapPreview').textContent = `Capacity: ${this.value*6} players (6 per team)`;
+});
+
+function mmShowLanding() {
+  ['mmLanding','mmCreateForm','mmJoinForm','mmLobby','mmReveal'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('mmLanding').style.display = 'block';
+}
+function mmShowCreate() {
+  ['mmLanding','mmJoinForm'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('mmCreateForm').style.display = 'block';
+}
+function mmShowJoin() {
+  ['mmLanding','mmCreateForm'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('mmJoinForm').style.display = 'block';
+}
+
+function mmGenerateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for(let i=0;i<6;i++) code += chars[Math.floor(Math.random()*chars.length)];
+  return code;
+}
+
+async function mmCreateRoom() {
+  if(!window.currentUser) { toast('Sign in first.'); return; }
+  const N = parseInt(document.getElementById('mmTeamSlider').value);
+  const { setDoc, doc, getDoc, db } = window.fb;
+  let code, exists = true, tries = 0;
+  do {
+    code = mmGenerateCode();
+    const snap = await getDoc(doc(db, 'matchmakerRooms', code));
+    exists = snap.exists();
+    tries++;
+  } while(exists && tries < 5);
+
+  const anchors = {};
+  Array.from({length:N}, (_,i) => String.fromCharCode(65+i)).forEach(t => anchors[t] = null);
+
+  const room = {
+    code, hostUid: window.currentUser.uid, teams: N,
+    maxRoles: { S:N, OPP:N, OH:2*N, MB:N, L:N }, capacity: 6*N,
+    players: {
+      [window.currentUser.uid]: { uid: window.currentUser.uid, name: window.currentUsername, role: null, targets: [], joinedAt: Date.now() }
+    },
+    anchors, status: 'lobby', createdAt: serverTimestamp()
+  };
+  await setDoc(doc(db, 'matchmakerRooms', code), room);
+  mmSubscribe(code);
+}
+
+async function mmJoinRoom() {
+  if(!window.currentUser) { toast('Sign in first.'); return; }
+  const code = document.getElementById('mmJoinCode').value.trim().toUpperCase();
+  if(code.length !== 6) { toast('Enter the 6-character code.'); return; }
+  const { getDoc, updateDoc, doc, db } = window.fb;
+  const ref = doc(db, 'matchmakerRooms', code);
+  const snap = await getDoc(ref);
+  if(!snap.exists()) { toast('Room not found.'); return; }
+  const room = snap.data();
+  if(room.players[window.currentUser.uid]) { mmSubscribe(code); return; }
+  if(Object.keys(room.players).length >= room.capacity) { toast('Room is full.'); return; }
+  await updateDoc(ref, {
+    [`players.${window.currentUser.uid}`]: { uid: window.currentUser.uid, name: window.currentUsername, role: null, targets: [], joinedAt: Date.now() }
+  });
+  mmSubscribe(code);
+}
+
+function mmSubscribe(code) {
+  if(mmUnsub) mmUnsub();
+  mmRoomCode = code;
+  const { onSnapshot, doc, db } = window.fb;
+  mmUnsub = onSnapshot(doc(db, 'matchmakerRooms', code), snap => {
+    if(!snap.exists()) return;
+    mmCurrentRoom = snap.data();
+    if(mmCurrentRoom.status === 'complete') mmRenderReveal();
+    else mmRenderLobby();
+  });
+}
+
+function mmLeaveRoom() {
+  if(mmUnsub) mmUnsub();
+  mmUnsub = null; mmRoomCode = null; mmCurrentRoom = null;
+  mmShowLanding();
+}
+
+function mmRenderLobby() {
+  const room = mmCurrentRoom;
+  ['mmLanding','mmCreateForm','mmJoinForm','mmReveal'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('mmLobby').style.display = 'block';
+  document.getElementById('mmCodeDisplay').textContent = room.code;
+
+  const players = Object.values(room.players);
+  document.getElementById('mmFillStatus').textContent = `${players.length} / ${room.capacity} players`;
+
+  // Anchors
+  const anchorsRow = document.getElementById('mmAnchorsRow');
+  anchorsRow.style.gridTemplateColumns = `repeat(${room.teams}, 1fr)`;
+  anchorsRow.innerHTML = Object.keys(room.anchors).map(t => {
+    const uid = room.anchors[t];
+    const p = uid ? room.players[uid] : null;
+    return `<div class="mm-anchor-card ${p?'filled':''}">
+      <div style="font-size:11px; color:var(--gray-dim); letter-spacing:1px; text-transform:uppercase; font-weight:800;">Team ${t} Anchor</div>
+      <div style="font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--white); letter-spacing:1px; margin-top:4px;">${p ? p.name : '— Open —'}</div>
+    </div>`;
+  }).join('');
+
+  // Role counts
+  const counts = { S:0, OPP:0, OH:0, MB:0, L:0 };
+  players.forEach(p => { if(p.role) counts[p.role]++; });
+
+  const roleSel = document.getElementById('mmRoleSelector');
+  const myPlayer = room.players[window.currentUser.uid];
+  roleSel.innerHTML = MM_ROLES.map(r => {
+    const full = counts[r] >= room.maxRoles[r];
+    const mine = myPlayer?.role === r;
+    const disabled = full && !mine;
+    return `<button class="pos-btn ${mine?'selected':''}" ${disabled?'disabled style="opacity:0.35;cursor:not-allowed;"':''} onclick="mmSelectRole('${r}')">${MM_ROLE_LABEL[r]} (${counts[r]}/${room.maxRoles[r]})</button>`;
+  }).join('');
+
+  // Targets
+  const grid = document.getElementById('mmTargetGrid');
+  const others = players.filter(p => p.uid !== window.currentUser.uid);
+  grid.innerHTML = others.map(p => {
+    const selected = (myPlayer?.targets||[]).includes(p.uid);
+    return `<div class="mm-target-card ${selected?'selected':''}" onclick="mmToggleTarget('${p.uid}')">
+      <div style="font-weight:700; color:var(--white); font-size:14px;">${p.name}</div>
+      <div class="mm-role-tag">${p.role ? MM_ROLE_LABEL[p.role] : 'Unassigned'}</div>
+    </div>`;
+  }).join('') || '<div style="color:var(--gray-dim); font-size:13px;">No other players yet — share the code!</div>';
+
+  // Conflict warning
+  const warn = document.getElementById('mmConflictWarning');
+  const conflict = (myPlayer?.targets||[]).some(uid => {
+    const t = room.players[uid];
+    return t && myPlayer.role && t.role === myPlayer.role && MM_EXCLUSIVE.includes(myPlayer.role);
+  });
+  warn.style.display = conflict ? 'block' : 'none';
+  warn.textContent = 'You share the same exclusive role and must play on opposing teams.';
+
+  // Host controls
+  const hostDiv = document.getElementById('mmHostControls');
+  const isHost = window.currentUser.uid === room.hostUid;
+  hostDiv.style.display = (isHost && players.length === room.capacity) ? 'block' : 'none';
+}
+
+async function mmSelectRole(role) {
+  const { updateDoc, doc, db } = window.fb;
+  const ref = doc(db, 'matchmakerRooms', mmRoomCode);
+  const uid = window.currentUser.uid;
+  const room = mmCurrentRoom;
+  const counts = { S:0, OPP:0, OH:0, MB:0, L:0 };
+  Object.values(room.players).forEach(p => { if(p.role && p.uid !== uid) counts[p.role]++; });
+  if(counts[role] >= room.maxRoles[role]) { toast('That position is full.'); return; }
+
+  const update = { [`players.${uid}.role`]: role };
+  if(role === 'S') {
+    const openTeam = Object.keys(room.anchors).find(t => !room.anchors[t]);
+    if(openTeam) update[`anchors.${openTeam}`] = uid;
+  }
+  await updateDoc(ref, update);
+}
+
+async function mmToggleTarget(targetUid) {
+  const { updateDoc, doc, arrayUnion, arrayRemove, db } = window.fb;
+  const ref = doc(db, 'matchmakerRooms', mmRoomCode);
+  const uid = window.currentUser.uid;
+  const myTargets = mmCurrentRoom.players[uid]?.targets || [];
+  const field = `players.${uid}.targets`;
+  await updateDoc(ref, { [field]: myTargets.includes(targetUid) ? arrayRemove(targetUid) : arrayUnion(targetUid) });
+}
+
+function mmSlotOpen(teamData, role) {
+  if(role === 'OH') return teamData.OH.length < 2;
+  return !teamData[role];
+}
+function mmAssignToTeam(teamsObj, t, p) {
+  if(p.role === 'OH') teamsObj[t].OH.push(p.uid); else teamsObj[t][p.role] = p.uid;
+}
+
+function mmDraftAlgorithm(room) {
+  const N = room.teams;
+  const letters = Array.from({length:N}, (_,i) => String.fromCharCode(65+i));
+  const teamsObj = {};
+  letters.forEach(t => teamsObj[t] = { S:null, OPP:null, OH:[], MB:null, L:null });
+
+  // Phase 1: anchors
+  letters.forEach(t => { if(room.anchors[t]) teamsObj[t].S = room.anchors[t]; });
+  const assigned = new Set(Object.values(room.anchors).filter(Boolean));
+
+  const findTeamOf = uid => letters.find(t => teamsObj[t].S===uid || teamsObj[t].OPP===uid || teamsObj[t].MB===uid || teamsObj[t].L===uid || teamsObj[t].OH.includes(uid));
+
+  // Phase 2: mutual & targeted
+  let remaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
+  remaining.sort((a,b) => (a.joinedAt||0) - (b.joinedAt||0));
+  let progress = true;
+  while(progress) {
+    progress = false;
+    remaining = remaining.filter(p => !assigned.has(p.uid));
+    remaining.forEach(p => {
+      if(assigned.has(p.uid)) return;
+      for(const targetUid of (p.targets||[])) {
+        const targetTeam = findTeamOf(targetUid);
+        if(targetTeam && mmSlotOpen(teamsObj[targetTeam], p.role)) {
+          mmAssignToTeam(teamsObj, targetTeam, p);
+          assigned.add(p.uid);
+          progress = true;
+          break;
+        }
+      }
+    });
+  }
+
+  // Phase 3: fallback smart fill, round robin, guarantees standard lineup
+  const stillRemaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
+  let ti = 0, guard = 0;
+  stillRemaining.forEach(p => {
+    while(guard < 10000) {
+      const t = letters[ti % N];
+      ti++; guard++;
+      if(mmSlotOpen(teamsObj[t], p.role)) { mmAssignToTeam(teamsObj, t, p); assigned.add(p.uid); break; }
+    }
+  });
+
+  return teamsObj;
+}
+
+async function mmRunDraft() {
+  if(!mmCurrentRoom || window.currentUser.uid !== mmCurrentRoom.hostUid) return;
+  const finalTeams = mmDraftAlgorithm(mmCurrentRoom);
+  const { updateDoc, doc, db } = window.fb;
+  await updateDoc(doc(db, 'matchmakerRooms', mmRoomCode), { finalTeams, status: 'complete' });
+}
+
+function mmRenderReveal() {
+  const room = mmCurrentRoom;
+  ['mmLanding','mmCreateForm','mmJoinForm','mmLobby'].forEach(id => document.getElementById(id).style.display = 'none');
+  document.getElementById('mmReveal').style.display = 'block';
+
+  const container = document.getElementById('mmFinalTeams');
+  container.innerHTML = Object.entries(room.finalTeams).map(([t, roster]) => {
+    const rows = ['S','OPP','MB','L'].map(r => {
+      const uid = roster[r];
+      const p = uid ? room.players[uid] : null;
+      const mutual = p && (p.targets||[]).some(tid => (room.players[tid]?.targets||[]).includes(p.uid));
+      return `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border-dim);">
+        <span style="font-size:12px; color:var(--gray-dim); font-weight:700;">${MM_ROLE_LABEL[r]}</span>
+        <span style="font-size:13px; color:var(--white); font-weight:600;">${p ? p.name : '—'} ${mutual?'<span style="color:var(--green);font-size:10px;">MUTUAL</span>':''}</span>
+      </div>`;
+    }).join('') + roster.OH.map(uid => {
+      const p = room.players[uid];
+      return `<div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border-dim);">
+        <span style="font-size:12px; color:var(--gray-dim); font-weight:700;">Outside Hitter</span>
+        <span style="font-size:13px; color:var(--white); font-weight:600;">${p.name}</span>
+      </div>`;
+    }).join('');
+    return `<div class="mm-team-card">
+      <div style="font-family:'Bebas Neue',sans-serif; font-size:26px; color:var(--white); letter-spacing:2px; margin-bottom:10px;">TEAM ${t}</div>
+      ${rows}
+    </div>`;
+  }).join('');
+}
+
+function mmCopyRoster() {
+  const room = mmCurrentRoom;
+  if(!room?.finalTeams) return;
+  let text = `🏐 *${room.code} — Final Rosters*\n\n`;
+  Object.entries(room.finalTeams).forEach(([t, roster]) => {
+    text += `*Team ${t}*\n`;
+    ['S','OPP','MB','L'].forEach(r => {
+      const p = roster[r] ? room.players[roster[r]] : null;
+      text += `- ${MM_ROLE_LABEL[r]}: ${p ? p.name : '—'}\n`;
+    });
+    roster.OH.forEach(uid => text += `- Outside Hitter: ${room.players[uid].name}\n`);
+    text += '\n';
+  });
+  copyToClipboard(text);
+}
 </script>
 </body>
 </html>
