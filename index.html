@@ -3086,10 +3086,12 @@ function mmRenderLobby() {
   const players = Object.values(room.players);
   document.getElementById('mmFillStatus').textContent = `${players.length} / ${room.capacity} players`;
 
-  // Anchors
+  // Anchors — always build team letters deterministically from room.teams,
+  // never from Object.keys(room.anchors), since Firestore map key order isn't stable
+  const teamLetters = Array.from({length: room.teams}, (_,i) => String.fromCharCode(65+i));
   const anchorsRow = document.getElementById('mmAnchorsRow');
   anchorsRow.style.gridTemplateColumns = `repeat(${room.teams}, 1fr)`;
-  anchorsRow.innerHTML = Object.keys(room.anchors).map(t => {
+  anchorsRow.innerHTML = teamLetters.map(t => {
     const uid = room.anchors[t];
     const p = uid ? room.players[uid] : null;
     return `<div class="mm-anchor-card ${p?'filled':''}">
@@ -3161,7 +3163,8 @@ async function mmSelectRole(role) {
 
   // If I'm becoming a Setter, claim the next open anchor slot
   if(role === 'S') {
-    const openTeam = Object.keys(room.anchors).find(t => !room.anchors[t]);
+    const teamLetters = Array.from({length: room.teams}, (_,i) => String.fromCharCode(65+i));
+    const openTeam = teamLetters.find(t => !room.anchors[t]);
     if(openTeam) update[`anchors.${openTeam}`] = uid;
   }
 
