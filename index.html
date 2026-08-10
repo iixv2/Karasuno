@@ -3142,15 +3142,29 @@ async function mmSelectRole(role) {
   const ref = doc(db, 'matchmakerRooms', mmRoomCode);
   const uid = window.currentUser.uid;
   const room = mmCurrentRoom;
+  const myCurrentRole = room.players[uid]?.role;
+
+  // Clicking the role you already have does nothing
+  if(myCurrentRole === role) return;
+
   const counts = { S:0, OPP:0, OH:0, MB:0, L:0 };
   Object.values(room.players).forEach(p => { if(p.role && p.uid !== uid) counts[p.role]++; });
   if(counts[role] >= room.maxRoles[role]) { toast('That position is full.'); return; }
 
   const update = { [`players.${uid}.role`]: role };
+
+  // If I was a Setter/anchor before, free up that anchor slot
+  if(myCurrentRole === 'S') {
+    const myTeam = Object.keys(room.anchors).find(t => room.anchors[t] === uid);
+    if(myTeam) update[`anchors.${myTeam}`] = null;
+  }
+
+  // If I'm becoming a Setter, claim the next open anchor slot
   if(role === 'S') {
     const openTeam = Object.keys(room.anchors).find(t => !room.anchors[t]);
     if(openTeam) update[`anchors.${openTeam}`] = uid;
   }
+
   await updateDoc(ref, update);
 }
 
