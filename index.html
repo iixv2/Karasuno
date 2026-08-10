@@ -14,7 +14,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, deleteField, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -32,7 +32,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp };
+  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, deleteField, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp };
   window.currentUser = null;
   window.currentUsername = null;
   window.historyCache = [];
@@ -387,6 +387,7 @@ async function deleteFriend(friendUid) {
       loadUserHistory();
       loadFriendList();
       loadFriendRequests();
+      if (window.mmTryResume) window.mmTryResume();
     }
   }
 
@@ -1322,7 +1323,12 @@ window.loadFriendRequests = loadFriendRequests;
       <button class="btn btn-ghost" onclick="mmLeaveRoom()">← Leave Room</button>
     </div>
 
-    <div id="mmAnchorsRow" style="display:grid; gap:12px; margin-bottom:24px;"></div>
+    <div id="mmAnchorsRow" style="display:grid; gap:12px; margin-bottom:12px;"></div>
+
+    <div style="text-align:center; margin-bottom:24px;">
+      <button class="btn btn-outline" style="padding:8px 20px; font-size:11px;" onclick="mmToggleAllTeamsView()" id="mmViewAllBtn">👥 View All Teams</button>
+    </div>
+    <div id="mmTeamsPreview" style="display:none; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; margin-bottom:24px;"></div>
 
     <div class="analytics-card" style="margin-bottom:20px;" id="mmMyCard">
       <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:12px;">Your Position</div>
@@ -1391,7 +1397,14 @@ if(name === 'profile') loadProfileScreen();
   if(name === 'history') renderHistory();
   if(name === 'friends') renderFriends();
   if(name === 'versus') initCourtClash();
-  if(name === 'matchmaker') mmShowLanding();
+  if(name === 'matchmaker') {
+    if(mmCurrentRoom && mmRoomCode) {
+      if(mmCurrentRoom.status === 'complete') mmRenderReveal();
+      else mmRenderLobby();
+    } else {
+      mmShowLanding();
+    }
+  }
 }
 
 function rotateQuote() {
@@ -2990,6 +3003,8 @@ const MM_EXCLUSIVE = ['S','OPP','MB','L']; // 1-per-team roles
 let mmRoomCode = null;
 let mmUnsub = null;
 let mmCurrentRoom = null;
+let mmExpandedTeam = null;   // e.g. 'A' when a single team card is expanded
+let mmShowAllTeams = false;  // true when "View All Teams" is toggled on
 
 document.getElementById('mmTeamSlider')?.addEventListener('input', function(){
   document.getElementById('mmCapPreview').textContent = `Capacity: ${this.value*6} players (6 per team)`;
@@ -3062,18 +3077,54 @@ async function mmJoinRoom() {
 function mmSubscribe(code) {
   if(mmUnsub) mmUnsub();
   mmRoomCode = code;
+  localStorage.setItem('mm_active_room', code);
   const { onSnapshot, doc, db } = window.fb;
   mmUnsub = onSnapshot(doc(db, 'matchmakerRooms', code), snap => {
-    if(!snap.exists()) return;
-    mmCurrentRoom = snap.data();
-    if(mmCurrentRoom.status === 'complete') mmRenderReveal();
-    else mmRenderLobby();
+    if(!snap.exists()) {
+      localStorage.removeItem('mm_active_room');
+      mmUnsub = null; mmRoomCode = null; mmCurrentRoom = null;
+      return;
+    }
+    const data = snap.data();
+    if(window.currentUser && !data.players[window.currentUser.uid]) {
+      // We're no longer a member of this room — stop tracking it.
+      localStorage.removeItem('mm_active_room');
+      if(mmUnsub) mmUnsub();
+      mmUnsub = null; mmRoomCode = null; mmCurrentRoom = null;
+      return;
+    }
+    mmCurrentRoom = data;
+    if(document.getElementById('screen-matchmaker').classList.contains('active')) {
+      if(mmCurrentRoom.status === 'complete') mmRenderReveal();
+      else mmRenderLobby();
+    }
   });
 }
 
-function mmLeaveRoom() {
+// Called once after login to silently reconnect to a room you were in
+// before navigating away or reloading the page.
+function mmTryResume() {
+  const saved = localStorage.getItem('mm_active_room');
+  if(saved && !mmRoomCode) mmSubscribe(saved);
+}
+window.mmTryResume = mmTryResume;
+
+async function mmLeaveRoom() {
+  if(mmRoomCode && window.currentUser && window.fb && mmCurrentRoom) {
+    try {
+      const { updateDoc, doc, db, deleteField } = window.fb;
+      const uid = window.currentUser.uid;
+      const update = { [`players.${uid}`]: deleteField() };
+      const myTeam = Object.keys(mmCurrentRoom.anchors || {}).find(t => mmCurrentRoom.anchors[t] === uid);
+      if(myTeam) update[`anchors.${myTeam}`] = null;
+      await updateDoc(doc(db, 'matchmakerRooms', mmRoomCode), update);
+    } catch(err) {
+      console.error('Leave room cleanup failed', err);
+    }
+  }
   if(mmUnsub) mmUnsub();
   mmUnsub = null; mmRoomCode = null; mmCurrentRoom = null;
+  localStorage.removeItem('mm_active_room');
   mmShowLanding();
 }
 
@@ -3094,11 +3145,15 @@ function mmRenderLobby() {
   anchorsRow.innerHTML = teamLetters.map(t => {
     const uid = room.anchors[t];
     const p = uid ? room.players[uid] : null;
-    return `<div class="mm-anchor-card ${p?'filled':''}">
+    const isOpen = mmExpandedTeam === t;
+    return `<div class="mm-anchor-card ${p?'filled':''}" style="cursor:pointer; ${isOpen?'border-color:var(--orange);':''}" onclick="mmToggleTeamExpand('${t}')">
       <div style="font-size:11px; color:var(--gray-dim); letter-spacing:1px; text-transform:uppercase; font-weight:800;">Team ${t} Anchor</div>
       <div style="font-family:'Bebas Neue',sans-serif; font-size:20px; color:var(--white); letter-spacing:1px; margin-top:4px;">${p ? p.name : '— Open —'}</div>
+      <div style="font-size:10px; color:var(--orange); margin-top:6px; font-weight:700;">${isOpen ? '▲ Hide Roster' : '▼ View Roster'}</div>
     </div>`;
   }).join('');
+
+  mmRenderTeamsPreview(room);
 
   // Role counts
   const counts = { S:0, OPP:0, OH:0, MB:0, L:0 };
@@ -3118,9 +3173,16 @@ function mmRenderLobby() {
   const others = players.filter(p => p.uid !== window.currentUser.uid);
   grid.innerHTML = others.map(p => {
     const selected = (myPlayer?.targets||[]).includes(p.uid);
+    const pickedMe = (p.targets||[]).includes(window.currentUser.uid);
+    const hasPickedAnyone = (p.targets||[]).length > 0;
+    let statusLabel, statusColor;
+    if(pickedMe) { statusLabel = '💚 Picked You'; statusColor = 'var(--green)'; }
+    else if(hasPickedAnyone) { statusLabel = '➡️ Picked Someone Else'; statusColor = 'var(--gray-dim)'; }
+    else { statusLabel = '— Hasn\'t Picked Yet'; statusColor = 'var(--gray-dark)'; }
     return `<div class="mm-target-card ${selected?'selected':''}" onclick="mmToggleTarget('${p.uid}')">
       <div style="font-weight:700; color:var(--white); font-size:14px;">${p.name}</div>
       <div class="mm-role-tag">${p.role ? MM_ROLE_LABEL[p.role] : 'Unassigned'}</div>
+      <div style="font-size:10px; font-weight:700; margin-top:4px; color:${statusColor};">${statusLabel}</div>
     </div>`;
   }).join('') || '<div style="color:var(--gray-dim); font-size:13px;">No other players yet — share the code!</div>';
 
@@ -3186,6 +3248,95 @@ function mmSlotOpen(teamData, role) {
 }
 function mmAssignToTeam(teamsObj, t, p) {
   if(p.role === 'OH') teamsObj[t].OH.push(p.uid); else teamsObj[t][p.role] = p.uid;
+}
+
+// Live "best guess" grouping from anchors + mutual/targeted picks so far.
+// No fallback fill — open slots just stay open, since the real draft hasn't run.
+function mmComputeLivePreview(room) {
+  const N = room.teams;
+  const letters = Array.from({length:N}, (_,i) => String.fromCharCode(65+i));
+  const teamsObj = {};
+  letters.forEach(t => teamsObj[t] = { S:null, OPP:null, OH:[], MB:null, L:null });
+
+  letters.forEach(t => { if(room.anchors[t]) teamsObj[t].S = room.anchors[t]; });
+  const assigned = new Set(Object.values(room.anchors).filter(Boolean));
+  const findTeamOf = uid => letters.find(t => teamsObj[t].S===uid || teamsObj[t].OPP===uid || teamsObj[t].MB===uid || teamsObj[t].L===uid || teamsObj[t].OH.includes(uid));
+
+  let remaining = Object.values(room.players).filter(p => !assigned.has(p.uid) && p.role);
+  remaining.sort((a,b) => (a.joinedAt||0) - (b.joinedAt||0));
+  let progress = true;
+  while(progress) {
+    progress = false;
+    remaining = remaining.filter(p => !assigned.has(p.uid));
+    remaining.forEach(p => {
+      if(assigned.has(p.uid)) return;
+      for(const targetUid of (p.targets||[])) {
+        const targetTeam = findTeamOf(targetUid);
+        if(targetTeam && mmSlotOpen(teamsObj[targetTeam], p.role)) {
+          mmAssignToTeam(teamsObj, targetTeam, p);
+          assigned.add(p.uid);
+          progress = true;
+          break;
+        }
+      }
+    });
+  }
+  return teamsObj;
+}
+
+function mmRenderTeamRoster(t, teamsObj, room) {
+  const roster = teamsObj[t];
+  const slotRow = (label, uid) => {
+    const p = uid ? room.players[uid] : null;
+    return `<div style="display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid var(--border-dim);">
+      <span style="font-size:11px; color:var(--gray-dim); font-weight:700;">${label}</span>
+      <span style="font-size:12px; color:${p?'var(--white)':'var(--gray-dark)'}; font-weight:600;">${p ? p.name : '— open —'}</span>
+    </div>`;
+  };
+  let rows = slotRow('Setter', roster.S) + slotRow('Opposite', roster.OPP) + slotRow('Middle Blocker', roster.MB) + slotRow('Libero', roster.L);
+  rows += slotRow('Outside Hitter', roster.OH[0] || null);
+  rows += slotRow('Outside Hitter', roster.OH[1] || null);
+
+  return `<div class="mm-team-card">
+    <div style="font-family:'Bebas Neue',sans-serif; font-size:22px; color:var(--white); letter-spacing:1.5px; margin-bottom:8px;">TEAM ${t}</div>
+    ${rows}
+  </div>`;
+}
+
+function mmToggleTeamExpand(t) {
+  mmExpandedTeam = (mmExpandedTeam === t) ? null : t;
+  mmShowAllTeams = false;
+  mmRenderLobby();
+}
+
+function mmToggleAllTeamsView() {
+  mmShowAllTeams = !mmShowAllTeams;
+  mmExpandedTeam = null;
+  mmRenderLobby();
+}
+
+function mmRenderTeamsPreview(room) {
+  const container = document.getElementById('mmTeamsPreview');
+  const btn = document.getElementById('mmViewAllBtn');
+  if(!container) return;
+  const teamsObj = mmComputeLivePreview(room);
+  const letters = Array.from({length: room.teams}, (_,i) => String.fromCharCode(65+i));
+
+  if(mmShowAllTeams) {
+    btn.textContent = '✕ Hide All Teams';
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = 'repeat(auto-fit,minmax(220px,1fr))';
+    container.innerHTML = letters.map(t => mmRenderTeamRoster(t, teamsObj, room)).join('');
+  } else if(mmExpandedTeam) {
+    btn.textContent = '👥 View All Teams';
+    container.style.display = 'grid';
+    container.style.gridTemplateColumns = '1fr';
+    container.innerHTML = mmRenderTeamRoster(mmExpandedTeam, teamsObj, room);
+  } else {
+    btn.textContent = '👥 View All Teams';
+    container.style.display = 'none';
+    container.innerHTML = '';
+  }
 }
 
 function mmDraftAlgorithm(room) {
