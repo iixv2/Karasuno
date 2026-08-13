@@ -13,7 +13,7 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
   import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, deleteField, query, where, orderBy, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -32,7 +32,7 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, deleteField, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp, runTransaction };
+  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, deleteField, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp, runTransaction, signInAnonymously };
   window.currentUser = null;
   window.currentUsername = null;
   window.guestMode = false;
@@ -357,6 +357,7 @@ async function deleteFriend(friendUid) {
 
   function updateAuthUI(user) {
     window.currentUser = user;
+    window.guestMode = !!(user && user.isAnonymous);
     const loginScreen = document.getElementById('screen-login');
     const usernameScreen = document.getElementById('screen-username');
     const appEl = document.getElementById('app');
@@ -370,6 +371,17 @@ async function deleteFriend(friendUid) {
       window.historyCache = [];
       window.historyLoaded = false;
       window.currentUsername = null;
+    } else if (user.isAnonymous) {
+      if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+      if (usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+      if (appEl) appEl.style.display = 'block';
+      if (topnav) topnav.style.display = 'flex';
+      const authBtn = document.getElementById('authButton');
+      const userStatus = document.getElementById('userStatus');
+      if (authBtn) authBtn.textContent = 'Sign in';
+      if (userStatus) userStatus.textContent = 'Guest';
+      if (window.mmTryResume) window.mmTryResume();
+      if (window.mmHandlePendingRoomLink) window.mmHandlePendingRoomLink();
     } else if (!window.currentUsername) {
       if (loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
       if (usernameScreen) { usernameScreen.style.display = 'flex'; usernameScreen.classList.add('active'); }
@@ -396,7 +408,7 @@ async function deleteFriend(friendUid) {
   }
 
   function handleAuthAction() {
-    if (window.currentUser) {
+    if (window.currentUser && !window.currentUser.isAnonymous) {
       logoutGoogle();
     } else {
       loginGoogle();
@@ -450,11 +462,7 @@ async function deleteFriend(friendUid) {
   if (loginScreen) loginScreen.style.display = 'none';
 
   onAuthStateChanged(auth, async (user) => {
-    if (!user && localStorage.getItem('karasuno_guest') && window.mmEnterGuestMode) {
-      window.mmEnterGuestMode();
-      return;
-    }
-    if (user) {
+    if (user && !user.isAnonymous) {
       try {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
         if (userSnap.exists() && userSnap.data().username) {
@@ -2536,7 +2544,7 @@ function showFriendMatchDetail(matchId, match) {
 }
 
 function loadProfileScreen() {
-  if(!window.currentUser) return;
+  if(!window.currentUser || window.currentUser.isAnonymous) return;
   const user = window.currentUser;
   const username = window.currentUsername || user.email.split('@')[0];
 
@@ -3050,24 +3058,17 @@ function mmGenerateCode() {
   return code;
 }
 
-function mmEnterGuestMode() {
-  window.guestMode = true;
+async function mmEnterGuestMode() {
   localStorage.setItem('karasuno_guest', '1');
-  const loginScreen = document.getElementById('screen-login');
-  const usernameScreen = document.getElementById('screen-username');
-  const appEl = document.getElementById('app');
-  const topnav = document.getElementById('topnav');
-  if(loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
-  if(usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
-  if(appEl) appEl.style.display = 'block';
-  if(topnav) topnav.style.display = 'flex';
-  const authBtn = document.getElementById('authButton');
-  const userStatus = document.getElementById('userStatus');
-  if(authBtn) authBtn.textContent = 'Sign in';
-  if(userStatus) userStatus.textContent = 'Guest';
-  if(window.mmTryResume) window.mmTryResume();
-  if(!mmRoomCode && window.mmHandlePendingRoomLink) window.mmHandlePendingRoomLink();
-  showScreen('matchmaker');
+  if (window.currentUser) { showScreen('matchmaker'); return; }
+  try {
+    await window.fb.signInAnonymously(window.fb.auth);
+    // onAuthStateChanged fires from here and calls updateAuthUI(user),
+    // which reveals the app UI — nothing else to do in this function.
+  } catch (err) {
+    console.error('Anonymous sign-in failed', err);
+    toast('Unable to continue as guest — check Anonymous sign-in is enabled in Firebase, or your connection.');
+  }
 }
 window.mmEnterGuestMode = mmEnterGuestMode;
 
@@ -3083,13 +3084,7 @@ function mmRenderAuthGate(containerId, label) {
 }
 
 function mmGetUid() {
-  if(window.currentUser) return window.currentUser.uid;
-  let gid = localStorage.getItem('mm_guest_uid');
-  if(!gid) {
-    gid = 'guest_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-    localStorage.setItem('mm_guest_uid', gid);
-  }
-  return gid;
+  return window.currentUser ? window.currentUser.uid : null;
 }
 
 async function mmCreateRoom() {
@@ -3126,18 +3121,23 @@ async function mmJoinRoom() {
   const code = document.getElementById('mmJoinCode').value.trim().toUpperCase();
   if(!name) { toast('Enter your display name.'); return; }
   if(code.length !== 6) { toast('Enter the 6-character code.'); return; }
-  const { getDoc, updateDoc, doc, db } = window.fb;
-  const uid = mmGetUid();
-  const ref = doc(db, 'matchmakerRooms', code);
-  const snap = await getDoc(ref);
-  if(!snap.exists()) { toast('Room not found.'); return; }
-  const room = snap.data();
-  if(room.players[uid]) { mmSubscribe(code); return; }
-  if(Object.keys(room.players).length >= room.capacity) { toast('Room is full.'); return; }
-  await updateDoc(ref, {
-    [`players.${uid}`]: { uid, name, role: null, targets: [], joinedAt: Date.now() }
-  });
-  mmSubscribe(code);
+  try {
+    const { getDoc, updateDoc, doc, db } = window.fb;
+    const uid = mmGetUid();
+    const ref = doc(db, 'matchmakerRooms', code);
+    const snap = await getDoc(ref);
+    if(!snap.exists()) { toast('Room not found.'); return; }
+    const room = snap.data();
+    if(room.players[uid]) { mmSubscribe(code); return; }
+    if(Object.keys(room.players).length >= room.capacity) { toast('Room is full.'); return; }
+    await updateDoc(ref, {
+      [`players.${uid}`]: { uid, name, role: null, targets: [], joinedAt: Date.now() }
+    });
+    mmSubscribe(code);
+  } catch(err) {
+    console.error('Join room failed', err);
+    toast('Unable to join room: ' + (err.message || 'unknown error'));
+  }
 }
 
 function mmSubscribe(code) {
