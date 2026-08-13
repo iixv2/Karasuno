@@ -3063,8 +3063,7 @@ async function mmEnterGuestMode() {
   if (window.currentUser) { showScreen('matchmaker'); return; }
   try {
     await window.fb.signInAnonymously(window.fb.auth);
-    // onAuthStateChanged fires from here and calls updateAuthUI(user),
-    // which reveals the app UI — nothing else to do in this function.
+    showScreen('matchmaker');   // ← add this
   } catch (err) {
     console.error('Anonymous sign-in failed', err);
     toast('Unable to continue as guest — check Anonymous sign-in is enabled in Firebase, or your connection.');
