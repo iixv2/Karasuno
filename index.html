@@ -14,7 +14,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
   import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
   import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-  import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, deleteField, query, where, orderBy, limit, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
+  import { getFirestore, collection, doc, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, getDocs, getDoc, deleteDoc, deleteField, query, where, orderBy, limit, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyB__-c4QLZB3JDuxfqYVvpJZv-SiLo0_PE",
@@ -32,9 +32,10 @@
   const db = getFirestore(app);
   const provider = new GoogleAuthProvider();
 
-  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, deleteField, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp };
+  window.fb = { auth, db, provider, setDoc, updateDoc, onSnapshot, arrayUnion, arrayRemove, doc, deleteDoc, deleteField, getDocs, getDoc, collection, query, where, orderBy, serverTimestamp, runTransaction };
   window.currentUser = null;
   window.currentUsername = null;
+  window.guestMode = false;
   window.historyCache = [];
   window.historyLoaded = false;
   window.deleteFriend = deleteFriend;
@@ -383,11 +384,14 @@ async function deleteFriend(friendUid) {
       const userStatus = document.getElementById('userStatus');
       if (authBtn) authBtn.textContent = 'Sign out';
       if (userStatus) userStatus.textContent = `@${window.currentUsername || user.email.split('@')[0]}`;
+      window.guestMode = false;
+      localStorage.removeItem('karasuno_guest');
       syncUserProfile(user);
       loadUserHistory();
       loadFriendList();
       loadFriendRequests();
       if (window.mmTryResume) window.mmTryResume();
+      if (window.mmHandlePendingRoomLink) window.mmHandlePendingRoomLink();
     }
   }
 
@@ -446,6 +450,10 @@ async function deleteFriend(friendUid) {
   if (loginScreen) loginScreen.style.display = 'none';
 
   onAuthStateChanged(auth, async (user) => {
+    if (!user && localStorage.getItem('karasuno_guest') && window.mmEnterGuestMode) {
+      window.mmEnterGuestMode();
+      return;
+    }
     if (user) {
       try {
         const userSnap = await getDoc(doc(db, 'users', user.uid));
@@ -1029,8 +1037,11 @@ window.loadFriendRequests = loadFriendRequests;
   <button class="btn btn-primary" style="font-size:16px; padding:14px 32px; letter-spacing:1.5px;" onclick="loginGoogle()">
     🔐 Sign In with Google
   </button>
+  <button class="btn btn-ghost" style="font-size:13px; padding:10px 28px; margin-top:12px;" onclick="mmEnterGuestMode()">
+    Continue as Guest
+  </button>
   <div style="margin-top:20px; font-size:12px; color:var(--gray-dim); text-align:center; max-width:300px;">
-    Sign in with your Google account to start tracking matches and connect with friends.
+    Sign in with Google to track matches and connect with friends — or continue as a guest to jump straight into the Matchmaker.
   </div>
 </div>
 
@@ -1063,8 +1074,8 @@ window.loadFriendRequests = loadFriendRequests;
     <button class="nav-tab" onclick="showScreen('friends')" id="navFriends">Friends</button>
     <button class="nav-tab" onclick="showScreen('results')" id="navResults">Analytics</button>
     <button class="nav-tab" onclick="showScreen('history')">History Hub</button>
-    <button class="nav-tab" onclick="showScreen('versus')">⚔ Court Clash</button>
-    <button class="nav-tab" onclick="showScreen('matchmaker')">🏐 Matchmaker</button>
+    <button class="nav-tab" onclick="showScreen('versus')">Court Clash</button>
+    <button class="nav-tab" onclick="showScreen('matchmaker')">Matchmaker</button>
   </div>
   <div class="nav-actions">
   <button class="btn btn-ghost" id="authButton" onclick="handleAuthAction()">Sign in</button>
@@ -1289,6 +1300,10 @@ window.loadFriendRequests = loadFriendRequests;
     <div class="analytics-card">
       <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Create Room</div>
       <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">Your Display Name</label>
+        <input class="field-input" id="mmCreateName" placeholder="e.g. Hinata" maxlength="24" />
+      </div>
+      <div class="field-group" style="margin-bottom:16px;">
         <label class="field-label">Number of Teams (N)</label>
         <div class="set-slider-row">
           <input type="range" id="mmTeamSlider" min="2" max="8" value="3" oninput="document.getElementById('mmTeamBadge').textContent=this.value" />
@@ -1305,6 +1320,10 @@ window.loadFriendRequests = loadFriendRequests;
     <div class="analytics-card">
       <div style="font-size:11px; letter-spacing:2px; text-transform:uppercase; color:var(--orange); font-weight:800; margin-bottom:16px;">Join Room</div>
       <div class="field-group" style="margin-bottom:16px;">
+        <label class="field-label">Your Display Name</label>
+        <input class="field-input" id="mmJoinName" placeholder="e.g. Kageyama" maxlength="24" />
+      </div>
+      <div class="field-group" style="margin-bottom:16px;">
         <label class="field-label">6-Character Access Code</label>
         <input class="field-input" id="mmJoinCode" style="text-transform:uppercase; letter-spacing:4px; text-align:center; font-size:20px;" maxlength="6" placeholder="XXXXXX" />
       </div>
@@ -1320,6 +1339,7 @@ window.loadFriendRequests = loadFriendRequests;
         <div style="font-family:'JetBrains Mono',monospace; font-size:36px; color:var(--white); letter-spacing:6px; font-weight:800;" id="mmCodeDisplay">------</div>
       </div>
       <div id="mmFillStatus" style="font-size:13px; color:var(--gray-dim); font-weight:700;"></div>
+      <button class="btn btn-outline" style="padding:8px 16px; font-size:11px;" onclick="mmCopyInviteLink()">🔗 Copy Invite Link</button>
       <button class="btn btn-ghost" onclick="mmLeaveRoom()">← Leave Room</button>
     </div>
 
@@ -1394,8 +1414,8 @@ function showScreen(name) {
 });
 if(name === 'profile') loadProfileScreen();
   rotateQuote();
-  if(name === 'history') renderHistory();
-  if(name === 'friends') renderFriends();
+  if(name === 'history') { window.guestMode ? mmRenderAuthGate('historyContent', 'History Hub') : renderHistory(); }
+if(name === 'friends') { window.guestMode ? mmRenderAuthGate('friendsContent', 'Friends Hub') : renderFriends(); }
   if(name === 'versus') initCourtClash();
   if(name === 'matchmaker') {
     if(mmCurrentRoom && mmRoomCode) {
@@ -3030,10 +3050,54 @@ function mmGenerateCode() {
   return code;
 }
 
+function mmEnterGuestMode() {
+  window.guestMode = true;
+  localStorage.setItem('karasuno_guest', '1');
+  const loginScreen = document.getElementById('screen-login');
+  const usernameScreen = document.getElementById('screen-username');
+  const appEl = document.getElementById('app');
+  const topnav = document.getElementById('topnav');
+  if(loginScreen) { loginScreen.style.display = 'none'; loginScreen.classList.remove('active'); }
+  if(usernameScreen) { usernameScreen.style.display = 'none'; usernameScreen.classList.remove('active'); }
+  if(appEl) appEl.style.display = 'block';
+  if(topnav) topnav.style.display = 'flex';
+  const authBtn = document.getElementById('authButton');
+  const userStatus = document.getElementById('userStatus');
+  if(authBtn) authBtn.textContent = 'Sign in';
+  if(userStatus) userStatus.textContent = 'Guest';
+  if(window.mmTryResume) window.mmTryResume();
+  if(!mmRoomCode && window.mmHandlePendingRoomLink) window.mmHandlePendingRoomLink();
+  showScreen('matchmaker');
+}
+window.mmEnterGuestMode = mmEnterGuestMode;
+
+function mmRenderAuthGate(containerId, label) {
+  const el = document.getElementById(containerId);
+  if(!el) return;
+  el.innerHTML = `<div class="empty-state">
+    <div class="empty-icon">🔒</div>
+    <h3>Sign In Required</h3>
+    <p>${label} is only available for signed-in players. Guests can still use the Matchmaker.</p>
+    <button class="btn btn-primary" style="margin-top:16px;" onclick="loginGoogle()">🔐 Sign In with Google</button>
+  </div>`;
+}
+
+function mmGetUid() {
+  if(window.currentUser) return window.currentUser.uid;
+  let gid = localStorage.getItem('mm_guest_uid');
+  if(!gid) {
+    gid = 'guest_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+    localStorage.setItem('mm_guest_uid', gid);
+  }
+  return gid;
+}
+
 async function mmCreateRoom() {
-  if(!window.currentUser) { toast('Sign in first.'); return; }
+  const name = document.getElementById('mmCreateName').value.trim();
+  if(!name) { toast('Enter your display name.'); return; }
   const N = parseInt(document.getElementById('mmTeamSlider').value);
   const { setDoc, doc, getDoc, db, serverTimestamp } = window.fb;
+  const uid = mmGetUid();
   let code, exists = true, tries = 0;
   do {
     code = mmGenerateCode();
@@ -3046,10 +3110,10 @@ async function mmCreateRoom() {
   Array.from({length:N}, (_,i) => String.fromCharCode(65+i)).forEach(t => anchors[t] = null);
 
   const room = {
-    code, hostUid: window.currentUser.uid, teams: N,
+    code, hostUid: uid, teams: N,
     maxRoles: { S:N, OPP:N, OH:2*N, MB:N, L:N }, capacity: 6*N,
     players: {
-      [window.currentUser.uid]: { uid: window.currentUser.uid, name: window.currentUsername, role: null, targets: [], joinedAt: Date.now() }
+      [uid]: { uid, name, role: null, targets: [], joinedAt: Date.now() }
     },
     anchors, status: 'lobby', createdAt: serverTimestamp()
   };
@@ -3058,18 +3122,20 @@ async function mmCreateRoom() {
 }
 
 async function mmJoinRoom() {
-  if(!window.currentUser) { toast('Sign in first.'); return; }
+  const name = document.getElementById('mmJoinName').value.trim();
   const code = document.getElementById('mmJoinCode').value.trim().toUpperCase();
+  if(!name) { toast('Enter your display name.'); return; }
   if(code.length !== 6) { toast('Enter the 6-character code.'); return; }
   const { getDoc, updateDoc, doc, db } = window.fb;
+  const uid = mmGetUid();
   const ref = doc(db, 'matchmakerRooms', code);
   const snap = await getDoc(ref);
   if(!snap.exists()) { toast('Room not found.'); return; }
   const room = snap.data();
-  if(room.players[window.currentUser.uid]) { mmSubscribe(code); return; }
+  if(room.players[uid]) { mmSubscribe(code); return; }
   if(Object.keys(room.players).length >= room.capacity) { toast('Room is full.'); return; }
   await updateDoc(ref, {
-    [`players.${window.currentUser.uid}`]: { uid: window.currentUser.uid, name: window.currentUsername, role: null, targets: [], joinedAt: Date.now() }
+    [`players.${uid}`]: { uid, name, role: null, targets: [], joinedAt: Date.now() }
   });
   mmSubscribe(code);
 }
@@ -3086,7 +3152,7 @@ function mmSubscribe(code) {
       return;
     }
     const data = snap.data();
-    if(window.currentUser && !data.players[window.currentUser.uid]) {
+    if(!data.players[mmGetUid()]) {
       // We're no longer a member of this room — stop tracking it.
       localStorage.removeItem('mm_active_room');
       if(mmUnsub) mmUnsub();
@@ -3110,10 +3176,10 @@ function mmTryResume() {
 window.mmTryResume = mmTryResume;
 
 async function mmLeaveRoom() {
-  if(mmRoomCode && window.currentUser && window.fb && mmCurrentRoom) {
+  if(mmRoomCode && window.fb && mmCurrentRoom) {
     try {
       const { updateDoc, doc, db, deleteField } = window.fb;
-      const uid = window.currentUser.uid;
+      const uid = mmGetUid();
       const update = { [`players.${uid}`]: deleteField() };
       const myTeam = Object.keys(mmCurrentRoom.anchors || {}).find(t => mmCurrentRoom.anchors[t] === uid);
       if(myTeam) update[`anchors.${myTeam}`] = null;
@@ -3160,7 +3226,7 @@ function mmRenderLobby() {
   players.forEach(p => { if(p.role) counts[p.role]++; });
 
   const roleSel = document.getElementById('mmRoleSelector');
-  const myPlayer = room.players[window.currentUser.uid];
+  const myPlayer = room.players[mmGetUid()];
   roleSel.innerHTML = MM_ROLES.map(r => {
     const full = counts[r] >= room.maxRoles[r];
     const mine = myPlayer?.role === r;
@@ -3170,10 +3236,10 @@ function mmRenderLobby() {
 
   // Targets
   const grid = document.getElementById('mmTargetGrid');
-const others = players.filter(p => p.uid !== window.currentUser.uid);
+const others = players.filter(p => p.uid !== mmGetUid());
 grid.innerHTML = others.map(p => {
   const selected = (myPlayer?.targets||[]).includes(p.uid);
-  const pickedMe = (p.targets||[]).includes(window.currentUser.uid);
+  const pickedMe = (p.targets||[]).includes(mmGetUid());
   return `<div class="mm-target-card ${selected?'selected':''}" onclick="mmToggleTarget('${p.uid}')">
     <div style="font-weight:700; color:var(--white); font-size:14px;">${p.name}</div>
     <div class="mm-role-tag">${p.role ? MM_ROLE_LABEL[p.role] : 'Unassigned'}</div>
@@ -3192,14 +3258,14 @@ grid.innerHTML = others.map(p => {
 
   // Host controls
   const hostDiv = document.getElementById('mmHostControls');
-  const isHost = window.currentUser.uid === room.hostUid;
+  const isHost = mmGetUid() === room.hostUid;
   hostDiv.style.display = (isHost && players.length === room.capacity) ? 'block' : 'none';
 }
 
 async function mmSelectRole(role) {
   const { updateDoc, doc, db } = window.fb;
   const ref = doc(db, 'matchmakerRooms', mmRoomCode);
-  const uid = window.currentUser.uid;
+  const uid = mmGetUid();
   const room = mmCurrentRoom;
   const myCurrentRole = room.players[uid]?.role;
 
@@ -3240,7 +3306,7 @@ function mmPickWouldConflict(myRole, targetPlayer, room) {
 async function mmToggleTarget(targetUid) {
   const { updateDoc, doc, arrayUnion, arrayRemove, db } = window.fb;
   const ref = doc(db, 'matchmakerRooms', mmRoomCode);
-  const uid = window.currentUser.uid;
+  const uid = mmGetUid();
   const myPlayer = mmCurrentRoom.players[uid];
   const isSelecting = !(myPlayer?.targets||[]).includes(targetUid);
 
@@ -3397,6 +3463,33 @@ function mmRenderTeamsPreview(room) {
 
 function mmDraftAlgorithm(room) { return mmBuildTeamsFromMutualPicks(room); }
 
+async function mmRunDraft() {
+  if(!mmRoomCode || !mmCurrentRoom) return;
+  const uid = mmGetUid();
+  if(uid !== mmCurrentRoom.hostUid) { toast('Only the host can run the draft.'); return; }
+
+  const { runTransaction, doc, db } = window.fb;
+  const ref = doc(db, 'matchmakerRooms', mmRoomCode);
+
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(ref);
+      if(!snap.exists()) throw new Error('Room no longer exists.');
+      const room = snap.data();
+      if(room.status === 'complete') return; // already resolved by another click — no-op
+      if(uid !== room.hostUid) throw new Error('Only the host can run the draft.');
+      if(Object.keys(room.players).length < room.capacity) throw new Error('Room is not full yet.');
+
+      const finalTeams = mmDraftAlgorithm(room);
+      tx.update(ref, { finalTeams, status: 'complete' });
+    });
+    toast('Draft resolved! Revealing teams...');
+  } catch(err) {
+    console.error('Draft resolution failed', err);
+    toast(err.message || 'Unable to resolve the draft.');
+  }
+}
+
 function mmRenderReveal() {
   const room = mmCurrentRoom;
   ['mmLanding','mmCreateForm','mmJoinForm','mmLobby'].forEach(id => document.getElementById(id).style.display = 'none');
@@ -3441,6 +3534,28 @@ function mmCopyRoster() {
   });
   copyToClipboard(text);
 }
+
+function mmCopyInviteLink() {
+  if(!mmRoomCode) return;
+  const url = `${window.location.origin}${window.location.pathname}?room=${mmRoomCode}`;
+  copyToClipboard(url);
+}
+
+function mmHandlePendingRoomLink() {
+  if(!window.mmPendingCode) return;
+  showScreen('matchmaker');
+  mmShowJoin();
+  const codeInput = document.getElementById('mmJoinCode');
+  if(codeInput) codeInput.value = window.mmPendingCode;
+  window.mmPendingCode = null;
+}
+window.mmHandlePendingRoomLink = mmHandlePendingRoomLink;
+
+(function() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('room');
+  if(code) window.mmPendingCode = code.toUpperCase();
+})();
 </script>
 </body>
 </html>
