@@ -1028,6 +1028,29 @@ window.loadFriendRequests = loadFriendRequests;
 .mm-target-card.selected { border-color:var(--orange); background:var(--orange-glow); }
 .mm-role-tag { font-size:10px; letter-spacing:1px; color:var(--orange); font-weight:800; text-transform:uppercase; margin-top:2px; }
 .mm-team-card { background:var(--bg-card); border:1px solid var(--border-dim); border-radius:12px; padding:18px; border-top:3px solid var(--orange); }
+
+#toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg-card2);
+  border: 1px solid var(--orange);
+  color: var(--white);
+  padding: 12px 22px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
 </style>
 <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4487082317458214"
      crossorigin="anonymous"></script>
